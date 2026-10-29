@@ -64,6 +64,7 @@ fun SettingsScreen(
     statusMessage: String?,
     onCheckUpdate: () -> Unit,
     onDownloadAndInstall: (String) -> Unit,
+    onOpenDiagnostics: () -> Unit,
     onOpenPeugeotLab: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -233,10 +234,10 @@ fun SettingsScreen(
             }
         }
 
-        // --- 3. Laboratório Peugeot 508 ---
+        // --- 3. Diagnóstico e Laboratório ---
         item {
             Text(
-                text = "FERRAMENTAS PEUGEOT 508",
+                text = "DIAGNÓSTICO & FERRAMENTAS PEUGEOT",
                 color = TextSecondary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
@@ -244,19 +245,39 @@ fun SettingsScreen(
             )
             Spacer(modifier = Modifier.height(6.dp))
 
-            Button(
-                onClick = onOpenPeugeotLab,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = DarkSurfaceElevated,
-                    contentColor = PeugeotCopper
-                ),
-                shape = RoundedCornerShape(12.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                Text("Abrir Laboratório de Cores & Consola CAN", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Button(
+                    onClick = onOpenDiagnostics,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DarkSurfaceElevated,
+                        contentColor = NeonCyan
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
+                    Text("Ler Erros DTC", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = onOpenPeugeotLab,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DarkSurfaceElevated,
+                        contentColor = PeugeotCopper
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
+                    Text("Laboratório 508", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
 

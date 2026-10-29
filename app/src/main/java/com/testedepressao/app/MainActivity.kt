@@ -19,11 +19,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,6 +59,7 @@ import com.testedepressao.app.ui.screens.LiveTelemetryScreen
 import com.testedepressao.app.ui.screens.PeugeotLabScreen
 import com.testedepressao.app.ui.screens.SensorsScreen
 import com.testedepressao.app.ui.screens.SettingsScreen
+import com.testedepressao.app.ui.screens.TripComputerScreen
 import com.testedepressao.app.ui.theme.CarbonBlack
 import com.testedepressao.app.ui.theme.DarkSurface
 import com.testedepressao.app.ui.theme.NeonCyan
@@ -110,6 +111,7 @@ fun MainAppContent(viewModel: MainViewModel) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var showBluetoothDialog by remember { mutableStateOf(false) }
     var showPeugeotLabModal by remember { mutableStateOf(false) }
+    var showDiagnosticsModal by remember { mutableStateOf(false) }
 
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val connectedDeviceName by viewModel.connectedDeviceName.collectAsState()
@@ -122,6 +124,9 @@ fun MainAppContent(viewModel: MainViewModel) {
     val dtcCodes by viewModel.dtcCodes.collectAsState()
     val isScanningDtc by viewModel.isScanningDtc.collectAsState()
     val psaConsoleLog by viewModel.psaConsoleLog.collectAsState()
+
+    val liveTrip by viewModel.liveTrip.collectAsState()
+    val tripHistory by viewModel.tripHistory.collectAsState()
 
     val updateInfo by viewModel.updateInfo.collectAsState()
     val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsState()
@@ -147,31 +152,47 @@ fun MainAppContent(viewModel: MainViewModel) {
         topBar = {
             TopAppBar(
                 title = {
-                    if (showPeugeotLabModal) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { showPeugeotLabModal = false }) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "Voltar", tint = TextPrimary)
+                    when {
+                        showPeugeotLabModal -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { showPeugeotLabModal = false }) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "Voltar", tint = TextPrimary)
+                                }
+                                Text(
+                                    text = "Laboratório 508",
+                                    color = TextPrimary,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
-                            Text(
-                                text = "Laboratório 508",
-                                color = TextPrimary,
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold
-                            )
                         }
-                    } else {
-                        Column {
-                            Text(
-                                text = "Teste de Pressão",
-                                color = TextPrimary,
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = if (isDemoMode) "MODO DEMO ATIVO" else (connectedDeviceName ?: "OBD2 Desconectado"),
-                                color = if (isDemoMode) WarningAmber else if (connectionStatus == ConnectionStatus.CONNECTED) SuccessGreen else TextSecondary,
-                                fontSize = 11.sp
-                            )
+                        showDiagnosticsModal -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { showDiagnosticsModal = false }) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "Voltar", tint = TextPrimary)
+                                }
+                                Text(
+                                    text = "Diagnóstico DTC",
+                                    color = TextPrimary,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        else -> {
+                            Column {
+                                Text(
+                                    text = "Teste de Pressão",
+                                    color = TextPrimary,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (isDemoMode) "MODO DEMO ATIVO" else (connectedDeviceName ?: "OBD2 Desconectado"),
+                                    color = if (isDemoMode) WarningAmber else if (connectionStatus == ConnectionStatus.CONNECTED) SuccessGreen else TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
                         }
                     }
                 },
@@ -227,7 +248,7 @@ fun MainAppContent(viewModel: MainViewModel) {
             )
         },
         bottomBar = {
-            if (!showPeugeotLabModal) {
+            if (!showPeugeotLabModal && !showDiagnosticsModal) {
                 NavigationBar(
                     containerColor = DarkSurface,
                     tonalElevation = 0.dp
@@ -250,22 +271,22 @@ fun MainAppContent(viewModel: MainViewModel) {
                     NavigationBarItem(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        icon = { Icon(Icons.Default.List, contentDescription = "Sensores") },
-                        label = { Text("Sensores", fontSize = 10.sp) },
+                        icon = { Icon(Icons.Default.DirectionsCar, contentDescription = "Viagens") },
+                        label = { Text("Viagens", fontSize = 10.sp) },
                         colors = itemColors
                     )
                     NavigationBarItem(
                         selected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
-                        icon = { Icon(Icons.Default.Timer, contentDescription = "0-100") },
-                        label = { Text("0-100", fontSize = 10.sp) },
+                        icon = { Icon(Icons.Default.List, contentDescription = "Sensores") },
+                        label = { Text("Sensores", fontSize = 10.sp) },
                         colors = itemColors
                     )
                     NavigationBarItem(
                         selected = selectedTab == 3,
                         onClick = { selectedTab = 3 },
-                        icon = { Icon(Icons.Default.Warning, contentDescription = "Erros") },
-                        label = { Text("Erros", fontSize = 10.sp) },
+                        icon = { Icon(Icons.Default.Timer, contentDescription = "0-100") },
+                        label = { Text("0-100", fontSize = 10.sp) },
                         colors = itemColors
                     )
                     NavigationBarItem(
@@ -285,47 +306,60 @@ fun MainAppContent(viewModel: MainViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (showPeugeotLabModal) {
-                PeugeotLabScreen(
-                    consoleLogs = psaConsoleLog,
-                    onTestSport = { viewModel.testPsaSport() },
-                    onTestCopper = { viewModel.testPsaCopper() },
-                    onSendRawCommand = { viewModel.sendRawCommand(it) }
-                )
-            } else {
-                when (selectedTab) {
-                    0 -> LiveTelemetryScreen(
-                        telemetry = telemetry,
-                        onResetPeak = { viewModel.resetPeakBoost() }
+            when {
+                showPeugeotLabModal -> {
+                    PeugeotLabScreen(
+                        consoleLogs = psaConsoleLog,
+                        onTestSport = { viewModel.testPsaSport() },
+                        onTestCopper = { viewModel.testPsaCopper() },
+                        onSendRawCommand = { viewModel.sendRawCommand(it) }
                     )
-                    1 -> SensorsScreen(
-                        sensors = allSensors
-                    )
-                    2 -> AccelerationScreen(
-                        state = accelerationState,
-                        onArmTest = { viewModel.armAccelerationTest() }
-                    )
-                    3 -> DiagnosticScreen(
+                }
+                showDiagnosticsModal -> {
+                    DiagnosticScreen(
                         codes = dtcCodes,
                         isScanning = isScanningDtc,
                         onScan = { viewModel.scanDtc() },
                         onClear = { viewModel.clearDtc() }
                     )
-                    4 -> SettingsScreen(
-                        keepScreenOn = keepScreenOn,
-                        onKeepScreenOnToggle = { viewModel.setKeepScreenOn(it) },
-                        sensors = allSensors,
-                        onToggleSensor = { id, enabled -> viewModel.toggleSensor(id, enabled) },
-                        currentVersion = viewModel.currentVersionName,
-                        updateInfo = updateInfo,
-                        isCheckingUpdate = isCheckingUpdate,
-                        isDownloadingUpdate = isDownloadingUpdate,
-                        downloadProgress = downloadProgress,
-                        statusMessage = updateStatusMessage,
-                        onCheckUpdate = { viewModel.checkForUpdates() },
-                        onDownloadAndInstall = { viewModel.downloadAndInstallUpdate(it) },
-                        onOpenPeugeotLab = { showPeugeotLabModal = true }
-                    )
+                }
+                else -> {
+                    when (selectedTab) {
+                        0 -> LiveTelemetryScreen(
+                            telemetry = telemetry,
+                            onResetPeak = { viewModel.resetPeakBoost() }
+                        )
+                        1 -> TripComputerScreen(
+                            liveTrip = liveTrip,
+                            history = tripHistory,
+                            onStartTrip = { viewModel.startTrip() },
+                            onStopTrip = { viewModel.stopTrip() },
+                            onDeleteTrip = { viewModel.deleteTrip(it) }
+                        )
+                        2 -> SensorsScreen(
+                            sensors = allSensors
+                        )
+                        3 -> AccelerationScreen(
+                            state = accelerationState,
+                            onArmTest = { viewModel.armAccelerationTest() }
+                        )
+                        4 -> SettingsScreen(
+                            keepScreenOn = keepScreenOn,
+                            onKeepScreenOnToggle = { viewModel.setKeepScreenOn(it) },
+                            sensors = allSensors,
+                            onToggleSensor = { id, enabled -> viewModel.toggleSensor(id, enabled) },
+                            currentVersion = viewModel.currentVersionName,
+                            updateInfo = updateInfo,
+                            isCheckingUpdate = isCheckingUpdate,
+                            isDownloadingUpdate = isDownloadingUpdate,
+                            downloadProgress = downloadProgress,
+                            statusMessage = updateStatusMessage,
+                            onCheckUpdate = { viewModel.checkForUpdates() },
+                            onDownloadAndInstall = { viewModel.downloadAndInstallUpdate(it) },
+                            onOpenDiagnostics = { showDiagnosticsModal = true },
+                            onOpenPeugeotLab = { showPeugeotLabModal = true }
+                        )
+                    }
                 }
             }
         }

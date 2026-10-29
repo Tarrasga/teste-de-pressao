@@ -1,6 +1,6 @@
 {
-  "versionCode": 2,
-  "versionName": "1.1.0",
+  "versionCode": 3,
+  "versionName": "1.2.0",
   "apkUrl": "https://raw.githubusercontent.com/Tarrasga/teste-de-pressao/main/TesteDePressao.apk",
-  "releaseNotes": "Novo ecrã de sensores personalizável, ecrã sempre ligado selecionável, otimização da velocidade do turbo e atualizador integrado diretamente na app!"
+  "releaseNotes": "Novo Trip Computer com gravação de viagens, cálculo de consumo instantâneo/médio e avaliador de estilo de condução (Económica, Dinâmica e Desportiva)!"
 }

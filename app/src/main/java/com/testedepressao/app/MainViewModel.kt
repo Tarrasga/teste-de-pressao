@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.testedepressao.app.data.CarBluetoothManager
 import com.testedepressao.app.data.ObdManager
 import com.testedepressao.app.data.SettingsPreferences
+import com.testedepressao.app.data.TripManager
 import com.testedepressao.app.data.UpdateManager
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -17,6 +18,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val settingsPreferences = SettingsPreferences(application)
     val updateManager = UpdateManager(application)
     val obdManager = ObdManager(bluetoothManager, settingsPreferences, viewModelScope)
+    val tripManager = TripManager(application, viewModelScope)
 
     val telemetry = obdManager.telemetry
     val allSensors = obdManager.allSensors
@@ -25,6 +27,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isScanningDtc = obdManager.isScanningDtc
     val psaConsoleLog = obdManager.psaConsoleLog
     val isDemoMode = obdManager.isDemoMode
+
+    val liveTrip = tripManager.liveTrip
+    val tripHistory = tripManager.tripHistory
 
     val connectionStatus = bluetoothManager.connectionStatus
     val connectedDeviceName = bluetoothManager.connectedDeviceName
@@ -36,6 +41,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val downloadProgress = updateManager.downloadProgress
     val updateStatusMessage = updateManager.statusMessage
     val currentVersionName = updateManager.getCurrentVersionName()
+
+    init {
+        tripManager.bindTelemetryProvider { obdManager.telemetry.value }
+    }
 
     fun getBondedDevices(): List<BluetoothDevice> {
         return bluetoothManager.getBondedDevices()
@@ -81,6 +90,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleSensor(sensorId: String, isEnabled: Boolean) {
         settingsPreferences.setSensorEnabled(sensorId, isEnabled)
+    }
+
+    fun startTrip() {
+        tripManager.startTrip()
+    }
+
+    fun stopTrip() {
+        tripManager.stopTrip()
+    }
+
+    fun deleteTrip(id: String) {
+        tripManager.deleteTrip(id)
     }
 
     fun checkForUpdates() {
