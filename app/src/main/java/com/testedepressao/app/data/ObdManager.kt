@@ -53,12 +53,18 @@ class ObdManager(
     private val _psaConsoleLog = MutableStateFlow<List<String>>(listOf("Consola PSA pronta para comandos."))
     val psaConsoleLog: StateFlow<List<String>> = _psaConsoleLog.asStateFlow()
 
+    private val _isDiagnosticActive = MutableStateFlow(false)
+    val isDiagnosticActive: StateFlow<Boolean> = _isDiagnosticActive.asStateFlow()
+
     private var pollingJob: Job? = null
     private var demoJob: Job? = null
     private var launchStartTime: Long = 0L
 
     private var barometricPressureKpa = 101 // ~1.01 Bar atmospheric pressure
     private var secondarySensorIndex = 0
+    private var consecutiveTurboFailures = 0
+    private val unsupportedPids = mutableSetOf<String>()
+    private val pidFailures = mutableMapOf<String, Int>()
 
     // Full list of sensors combined with current telemetry and enabled state
     val allSensors: StateFlow<List<SensorItem>> = combine(
@@ -226,15 +232,44 @@ class ObdManager(
     }
 
     private suspend fun initElm() {
-        bluetoothManager.sendCommand("ATZ", 1500) // Reset ELM
-        bluetoothManager.sendCommand("ATE0", 500)  // Echo Off
-        bluetoothManager.sendCommand("ATL0", 500)  // Linefeeds Off
-        bluetoothManager.sendCommand("ATH0", 500)  // Headers Off
-        bluetoothManager.sendCommand("ATSP0", 800) // Auto protocol selection
+        unsupportedPids.clear()
+        pidFailures.clear()
+        consecutiveTurboFailures = 0
+
+        bluetoothManager.sendCommand("ATZ", 1500)   // Reset ELM
+        bluetoothManager.sendCommand("ATE0", 500)   // Echo Off
+        bluetoothManager.sendCommand("ATL0", 500)   // Linefeeds Off
+        bluetoothManager.sendCommand("ATH0", 500)   // Headers Off
+        bluetoothManager.sendCommand("ATAT1", 500)  // Adaptive Timing 1
+        bluetoothManager.sendCommand("ATST32", 500) // Fast ELM timeout (~200ms)
+        bluetoothManager.sendCommand("ATSP0", 800)  // Auto protocol selection
+        bluetoothManager.sendCommand("ATSH 7DF", 500) // Standard broadcast header for Mode 01 Engine
 
         // Read barometric pressure once
-        val baroResp = bluetoothManager.sendCommand("0133", 500)
+        val baroResp = bluetoothManager.sendCommand("0133", 600)
         parseBaro(baroResp)
+    }
+
+    private suspend fun <T> withDiagnosticLock(block: suspend () -> T): T {
+        _isDiagnosticActive.value = true
+        try {
+            delay(120) // Allow in-flight polling command to finish and release mutex
+            return block()
+        } finally {
+            try {
+                // ALWAYS restore standard CAN broadcast header for Engine ECU
+                bluetoothManager.sendCommand("ATSH 7DF", 400)
+            } catch (_: Exception) {}
+            _isDiagnosticActive.value = false
+        }
+    }
+
+    private fun recordSecondaryFailure(sensorId: String) {
+        val count = (pidFailures[sensorId] ?: 0) + 1
+        pidFailures[sensorId] = count
+        if (count >= 2) {
+            unsupportedPids.add(sensorId)
+        }
     }
 
     fun startPolling() {
@@ -242,28 +277,40 @@ class ObdManager(
         pollingJob?.cancel()
         pollingJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
+                if (_isDiagnosticActive.value) {
+                    delay(150)
+                    continue
+                }
+
                 try {
                     val enabled = settingsPreferences.enabledSensors.value
 
                     // PRIORITY 1: Manifold Absolute Pressure (MAP) for Turbo Boost
+                    // ALWAYS POLLED UNCONDITIONALLY! Core feature of "Teste de Pressão"
                     var boostBar = _telemetry.value.boostPressureBar
                     var currentPeak = _telemetry.value.peakBoostBar
                     var mapKpa = _telemetry.value.intakePressureKpa
 
-                    if (enabled.contains("turbo")) {
-                        val mapResp = bluetoothManager.sendCommand("010B", 200)
-                        val parsedMap = parseSingleBytePid(mapResp, "010B")
-                        if (parsedMap != null) {
-                            mapKpa = parsedMap
-                            boostBar = ((mapKpa - barometricPressureKpa) / 100.0f).coerceIn(-1.0f, 3.5f)
-                            currentPeak = max(currentPeak, boostBar)
+                    val mapResp = bluetoothManager.sendCommand("010B", 350)
+                    val parsedMap = parseSingleBytePid(mapResp, "010B")
+                    if (parsedMap != null) {
+                        consecutiveTurboFailures = 0
+                        mapKpa = parsedMap
+                        boostBar = ((mapKpa - barometricPressureKpa) / 100.0f).coerceIn(-1.0f, 3.5f)
+                        currentPeak = max(currentPeak, boostBar)
+                    } else {
+                        consecutiveTurboFailures++
+                        if (consecutiveTurboFailures >= 3) {
+                            // Header may have been diverted or ELM lost sync - restore Engine broadcast CAN header
+                            bluetoothManager.sendCommand("ATSH 7DF", 350)
+                            consecutiveTurboFailures = 0
                         }
                     }
 
                     // PRIORITY 2: Speed (km/h) for 0-100 acceleration
                     var speedKmh = _telemetry.value.speedKmh
                     if (enabled.contains("speed") || _accelerationState.value.isArmed || _accelerationState.value.isRunning) {
-                        val speedResp = bluetoothManager.sendCommand("010D", 180)
+                        val speedResp = bluetoothManager.sendCommand("010D", 220)
                         val parsedSpeed = parseSingleBytePid(speedResp, "010D")
                         if (parsedSpeed != null) {
                             speedKmh = parsedSpeed
@@ -273,14 +320,14 @@ class ObdManager(
                     // PRIORITY 3: RPM
                     var rpm = _telemetry.value.rpm
                     if (enabled.contains("rpm")) {
-                        val rpmResp = bluetoothManager.sendCommand("010C", 180)
+                        val rpmResp = bluetoothManager.sendCommand("010C", 220)
                         val parsedRpm = parseRpm(rpmResp)
                         if (parsedRpm != null) {
                             rpm = parsedRpm
                         }
                     }
 
-                    // SECONDARY SENSORS: Round-Robin (one sensor per loop to keep turbo refresh rate fast!)
+                    // SECONDARY SENSORS: Round-Robin (one sensor per loop, skipping unsupported PIDs to maximize speed)
                     var coolantTemp = _telemetry.value.coolantTempC
                     var oilTemp = _telemetry.value.oilTempC
                     var voltage = _telemetry.value.batteryVoltage
@@ -294,7 +341,7 @@ class ObdManager(
                     val secondaryPool = listOf(
                         "coolant", "oil_temp", "voltage", "engine_load",
                         "intake_temp", "throttle", "maf", "fuel_level", "runtime"
-                    ).filter { enabled.contains(it) }
+                    ).filter { enabled.contains(it) && !unsupportedPids.contains(it) }
 
                     if (secondaryPool.isNotEmpty()) {
                         secondarySensorIndex = (secondarySensorIndex + 1) % secondaryPool.size
@@ -302,43 +349,95 @@ class ObdManager(
 
                         when (targetSensor) {
                             "coolant" -> {
-                                val resp = bluetoothManager.sendCommand("0105", 200)
-                                parseTemp(resp)?.let { coolantTemp = it }
+                                val resp = bluetoothManager.sendCommand("0105", 220)
+                                val parsed = parseTemp(resp)
+                                if (parsed != null) {
+                                    coolantTemp = parsed
+                                    pidFailures["coolant"] = 0
+                                } else {
+                                    recordSecondaryFailure("coolant")
+                                }
                             }
                             "oil_temp" -> {
-                                val resp = bluetoothManager.sendCommand("015C", 200)
-                                parseSingleBytePid(resp, "015C")?.let { oilTemp = it - 40 }
+                                val resp = bluetoothManager.sendCommand("015C", 220)
+                                val parsed = parseSingleBytePid(resp, "015C")
+                                if (parsed != null) {
+                                    oilTemp = parsed - 40
+                                    pidFailures["oil_temp"] = 0
+                                } else {
+                                    recordSecondaryFailure("oil_temp")
+                                }
                             }
                             "voltage" -> {
-                                val resp = bluetoothManager.sendCommand("0142", 200)
-                                parseTwoByteVoltage(resp)?.let {
-                                    voltage = it
-                                    updateBatteryHealth(it, rpm)
+                                val resp = bluetoothManager.sendCommand("0142", 220)
+                                val parsed = parseTwoByteVoltage(resp)
+                                if (parsed != null) {
+                                    voltage = parsed
+                                    updateBatteryHealth(parsed, rpm)
+                                    pidFailures["voltage"] = 0
+                                } else {
+                                    recordSecondaryFailure("voltage")
                                 }
                             }
                             "engine_load" -> {
-                                val resp = bluetoothManager.sendCommand("0104", 200)
-                                parsePercent(resp, "0104")?.let { engineLoad = it }
+                                val resp = bluetoothManager.sendCommand("0104", 220)
+                                val parsed = parsePercent(resp, "0104")
+                                if (parsed != null) {
+                                    engineLoad = parsed
+                                    pidFailures["engine_load"] = 0
+                                } else {
+                                    recordSecondaryFailure("engine_load")
+                                }
                             }
                             "intake_temp" -> {
-                                val resp = bluetoothManager.sendCommand("010F", 200)
-                                parseSingleBytePid(resp, "010F")?.let { intakeTemp = it - 40 }
+                                val resp = bluetoothManager.sendCommand("010F", 220)
+                                val parsed = parseSingleBytePid(resp, "010F")
+                                if (parsed != null) {
+                                    intakeTemp = parsed - 40
+                                    pidFailures["intake_temp"] = 0
+                                } else {
+                                    recordSecondaryFailure("intake_temp")
+                                }
                             }
                             "throttle" -> {
-                                val resp = bluetoothManager.sendCommand("0111", 200)
-                                parsePercent(resp, "0111")?.let { throttle = it }
+                                val resp = bluetoothManager.sendCommand("0111", 220)
+                                val parsed = parsePercent(resp, "0111")
+                                if (parsed != null) {
+                                    throttle = parsed
+                                    pidFailures["throttle"] = 0
+                                } else {
+                                    recordSecondaryFailure("throttle")
+                                }
                             }
                             "maf" -> {
-                                val resp = bluetoothManager.sendCommand("0110", 200)
-                                parseMaf(resp)?.let { maf = it }
+                                val resp = bluetoothManager.sendCommand("0110", 220)
+                                val parsed = parseMaf(resp)
+                                if (parsed != null) {
+                                    maf = parsed
+                                    pidFailures["maf"] = 0
+                                } else {
+                                    recordSecondaryFailure("maf")
+                                }
                             }
                             "fuel_level" -> {
-                                val resp = bluetoothManager.sendCommand("012F", 200)
-                                parsePercent(resp, "012F")?.let { fuelLevel = it }
+                                val resp = bluetoothManager.sendCommand("012F", 220)
+                                val parsed = parsePercent(resp, "012F")
+                                if (parsed != null) {
+                                    fuelLevel = parsed
+                                    pidFailures["fuel_level"] = 0
+                                } else {
+                                    recordSecondaryFailure("fuel_level")
+                                }
                             }
                             "runtime" -> {
-                                val resp = bluetoothManager.sendCommand("011F", 200)
-                                parseTwoByteInt(resp, "011F")?.let { runtimeSec = it }
+                                val resp = bluetoothManager.sendCommand("011F", 220)
+                                val parsed = parseTwoByteInt(resp, "011F")
+                                if (parsed != null) {
+                                    runtimeSec = parsed
+                                    pidFailures["runtime"] = 0
+                                } else {
+                                    recordSecondaryFailure("runtime")
+                                }
                             }
                         }
                     }
@@ -363,7 +462,7 @@ class ObdManager(
 
                     updateAccelerationTest(speedKmh)
                 } catch (e: Exception) {
-                    delay(300)
+                    delay(250)
                 }
             }
         }
@@ -503,7 +602,7 @@ class ObdManager(
 
     // --- Diagnostic Trouble Codes (DTC) ---
 
-    suspend fun readDtcCodes() {
+    suspend fun readDtcCodes() = withDiagnosticLock {
         _isScanningDtc.value = true
         _dtcCodes.value = emptyList()
 
@@ -514,7 +613,7 @@ class ObdManager(
                 DiagnosticTroubleCode("P0100", "Circuito do Sensor de Fluxo de Ar (MAF) - Sinal Fora dos Limites", "Informativo")
             )
             _isScanningDtc.value = false
-            return
+            return@withDiagnosticLock
         }
 
         try {
@@ -528,7 +627,7 @@ class ObdManager(
         }
     }
 
-    suspend fun readAdvancedPsaDtcCodes() {
+    suspend fun readAdvancedPsaDtcCodes() = withDiagnosticLock {
         _isScanningPsaDtc.value = true
         _dtcCodes.value = emptyList()
 
@@ -541,28 +640,25 @@ class ObdManager(
                 DiagnosticTroubleCode("U1218", "Comunicação na rede CAN com a BSI - Dados inválidos recebidos", "Informativo", "Rede CAN")
             )
             _isScanningPsaDtc.value = false
-            return
+            return@withDiagnosticLock
         }
 
         val allPsaCodes = mutableListOf<DiagnosticTroubleCode>()
         try {
             // 1. Scan BSI via UDS (ID 0x752)
-            bluetoothManager.sendCommand("ATSH 752", 300)
+            bluetoothManager.sendCommand("ATSH 752", 350)
             val bsiResp = bluetoothManager.sendCommand("19 02 FF", 2000)
             allPsaCodes.addAll(parsePsaUdsDtcResponse(bsiResp, "BSI (Carroçaria)"))
 
             // 2. Scan Engine ECU via UDS (ID 0x7E0)
-            bluetoothManager.sendCommand("ATSH 7E0", 300)
+            bluetoothManager.sendCommand("ATSH 7E0", 350)
             val engineResp = bluetoothManager.sendCommand("19 02 FF", 2000)
             allPsaCodes.addAll(parsePsaUdsDtcResponse(engineResp, "Motor PSA"))
 
             // 3. Scan Instrument Cluster Combine (ID 0x7B0)
-            bluetoothManager.sendCommand("ATSH 7B0", 300)
+            bluetoothManager.sendCommand("ATSH 7B0", 350)
             val clusterResp = bluetoothManager.sendCommand("19 02 FF", 2000)
             allPsaCodes.addAll(parsePsaUdsDtcResponse(clusterResp, "i-Cockpit"))
-
-            // Reset header back to standard broadcast
-            bluetoothManager.sendCommand("ATSH 7DF", 300)
 
             _dtcCodes.value = allPsaCodes
         } catch (e: Exception) {
@@ -572,16 +668,16 @@ class ObdManager(
         }
     }
 
-    suspend fun clearDtcCodes(): String {
+    suspend fun clearDtcCodes(): String = withDiagnosticLock {
         if (_isDemoMode.value) {
             delay(1000)
             _dtcCodes.value = emptyList()
-            return "Erros apagados com sucesso (Modo Demonstração)!"
+            return@withDiagnosticLock "Erros apagados com sucesso (Modo Demonstração)!"
         }
 
         val resp = bluetoothManager.sendCommand("04", 2500)
         _dtcCodes.value = emptyList()
-        return "Comando de limpeza (Modo 04) enviado: $resp"
+        "Comando de limpeza (Modo 04) enviado: $resp"
     }
 
     // --- Peugeot 508 / PSA Lab ---
@@ -603,16 +699,25 @@ class ObdManager(
         return resp
     }
 
-    suspend fun testPeugeotSportMode(): String {
+    suspend fun testPeugeotSportMode(): String = withDiagnosticLock {
         logPsa("--- Testar Modo Sport (Ativar Vermelho no Painel) ---")
         sendCustomElmCommand("ATSH 7B0")
-        return sendCustomElmCommand("2F 12 34 03 01")
+        val res = sendCustomElmCommand("2F 12 34 03 01")
+        res
     }
 
-    suspend fun testPeugeotThemeCopper(): String {
+    suspend fun testPeugeotThemeCopper(): String = withDiagnosticLock {
         logPsa("--- Testar Tema Cuivré / Cobre (Original 508) ---")
         sendCustomElmCommand("ATSH 7B3")
-        return sendCustomElmCommand("22 21 00")
+        val res = sendCustomElmCommand("22 21 00")
+        res
+    }
+
+    suspend fun restoreStandardCanHeader(): String = withDiagnosticLock {
+        logPsa(">> Repor Header CAN padrão (ATSH 7DF)")
+        val resp = bluetoothManager.sendCommand("ATSH 7DF", 500)
+        logPsa("<< $resp (CAN restaurado para Engine ECU)")
+        resp
     }
 
     private fun logPsa(msg: String) {
@@ -697,8 +802,8 @@ class ObdManager(
     // --- Helpers / Parsers ---
 
     private fun parseSingleBytePid(response: String, pid: String): Int? {
-        val clean = response.replace(" ", "").trim()
-        val expectedHeader = "41" + pid.substring(2)
+        val clean = response.replace(" ", "").trim().uppercase(Locale.US)
+        val expectedHeader = "41" + pid.substring(2).uppercase(Locale.US)
         val idx = clean.indexOf(expectedHeader)
         if (idx != -1 && idx + 6 <= clean.length) {
             val byteHex = clean.substring(idx + 4, idx + 6)
@@ -713,7 +818,7 @@ class ObdManager(
     }
 
     private fun parseRpm(response: String): Int? {
-        val clean = response.replace(" ", "").trim()
+        val clean = response.replace(" ", "").trim().uppercase(Locale.US)
         val idx = clean.indexOf("410C")
         if (idx != -1 && idx + 8 <= clean.length) {
             val a = clean.substring(idx + 4, idx + 6).toIntOrNull(16) ?: return null
@@ -724,7 +829,7 @@ class ObdManager(
     }
 
     private fun parseTwoByteVoltage(response: String): Float? {
-        val clean = response.replace(" ", "").trim()
+        val clean = response.replace(" ", "").trim().uppercase(Locale.US)
         val idx = clean.indexOf("4142")
         if (idx != -1 && idx + 8 <= clean.length) {
             val a = clean.substring(idx + 4, idx + 6).toIntOrNull(16) ?: return null
@@ -735,7 +840,7 @@ class ObdManager(
     }
 
     private fun parseMaf(response: String): Float? {
-        val clean = response.replace(" ", "").trim()
+        val clean = response.replace(" ", "").trim().uppercase(Locale.US)
         val idx = clean.indexOf("4110")
         if (idx != -1 && idx + 8 <= clean.length) {
             val a = clean.substring(idx + 4, idx + 6).toIntOrNull(16) ?: return null
@@ -746,8 +851,8 @@ class ObdManager(
     }
 
     private fun parseTwoByteInt(response: String, pid: String): Int? {
-        val clean = response.replace(" ", "").trim()
-        val expected = "41" + pid.substring(2)
+        val clean = response.replace(" ", "").trim().uppercase(Locale.US)
+        val expected = "41" + pid.substring(2).uppercase(Locale.US)
         val idx = clean.indexOf(expected)
         if (idx != -1 && idx + 8 <= clean.length) {
             val a = clean.substring(idx + 4, idx + 6).toIntOrNull(16) ?: return null
@@ -777,7 +882,7 @@ class ObdManager(
 
     private fun parseDtcResponse(response: String): List<DiagnosticTroubleCode> {
         val list = mutableListOf<DiagnosticTroubleCode>()
-        val clean = response.replace(" ", "").trim()
+        val clean = response.replace(" ", "").trim().uppercase(Locale.US)
         if (clean.contains("4300") || clean.contains("NODATA") || clean.isEmpty()) {
             return list
         }
@@ -811,7 +916,7 @@ class ObdManager(
 
     private fun parsePsaUdsDtcResponse(response: String, ecuSource: String): List<DiagnosticTroubleCode> {
         val list = mutableListOf<DiagnosticTroubleCode>()
-        val clean = response.replace(" ", "").trim()
+        val clean = response.replace(" ", "").trim().uppercase(Locale.US)
 
         // UDS Positive response to 19 02 FF starts with 59 02
         val idx = clean.indexOf("5902")

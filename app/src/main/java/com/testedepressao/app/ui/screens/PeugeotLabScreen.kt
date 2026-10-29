@@ -35,6 +35,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.OutlinedButton
 import com.testedepressao.app.ui.theme.CarbonBlack
 import com.testedepressao.app.ui.theme.DarkBorder
 import com.testedepressao.app.ui.theme.DarkSurface
@@ -51,6 +53,7 @@ fun PeugeotLabScreen(
     consoleLogs: List<String>,
     onTestSport: () -> Unit,
     onTestCopper: () -> Unit,
+    onRestoreCan: () -> Unit,
     onSendRawCommand: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -116,6 +119,20 @@ fun PeugeotLabScreen(
             ) {
                 Text("Ler Ecrã (Cobre)", fontSize = 12.sp)
             }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedButton(
+            onClick = onRestoreCan,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp),
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonCyan)
+        ) {
+            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.padding(end = 6.dp), tint = NeonCyan)
+            Text("Restaurar CAN Motor (Turbo / ATSH 7DF)", fontSize = 12.sp)
         }
 
         Spacer(modifier = Modifier.height(16.dp))

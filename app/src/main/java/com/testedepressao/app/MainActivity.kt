@@ -345,6 +345,7 @@ fun MainAppContent(viewModel: MainViewModel) {
                         consoleLogs = psaConsoleLog,
                         onTestSport = { viewModel.testPsaSport() },
                         onTestCopper = { viewModel.testPsaCopper() },
+                        onRestoreCan = { viewModel.restoreStandardCan() },
                         onSendRawCommand = { viewModel.sendRawCommand(it) }
                     )
                 }

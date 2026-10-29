@@ -140,6 +140,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun restoreStandardCan() {
+        viewModelScope.launch {
+            obdManager.restoreStandardCanHeader()
+        }
+    }
+
     fun sendRawCommand(command: String) {
         viewModelScope.launch {
             obdManager.sendCustomElmCommand(command)

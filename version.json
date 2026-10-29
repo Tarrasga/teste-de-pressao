@@ -1,6 +1,6 @@
 {
-  "versionCode": 4,
-  "versionName": "1.3.0",
+  "versionCode": 5,
+  "versionName": "1.3.1",
   "apkUrl": "https://raw.githubusercontent.com/Tarrasga/teste-de-pressao/main/TesteDePressao.apk",
-  "releaseNotes": "Novo analisador de Saúde da Bateria 12V (SoC % e Teste de Queda no Arranque) e leitor de Códigos de Avaria Específicos da Peugeot (BSI, Motor PSA e Rede CAN UDS)!"
+  "releaseNotes": "Correção crítica: leitura incondicional da pressão do turbo (MAP 010B), recuperação automática do cabeçalho CAN (ATSH 7DF) e isolamento anti-bloqueio entre diagnósticos e telemetria."
 }
