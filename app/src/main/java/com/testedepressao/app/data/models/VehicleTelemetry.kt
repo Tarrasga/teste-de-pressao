@@ -6,9 +6,16 @@ data class VehicleTelemetry(
     val rpm: Int = 0,
     val speedKmh: Int = 0,
     val coolantTempC: Int = 0,
+    val oilTempC: Int? = null,
+    val batteryVoltage: Float? = null,
+    val engineLoadPercent: Int? = null,
+    val intakeAirTempC: Int? = null,
+    val throttlePercent: Int? = null,
+    val mafGramsPerSec: Float? = null,
+    val fuelLevelPercent: Int? = null,
+    val engineRunTimeSec: Int? = null,
     val intakePressureKpa: Int = 101,
-    val barometricPressureKpa: Int = 101,
-    val throttlePercent: Int = 0
+    val barometricPressureKpa: Int = 101
 )
 
 data class AccelerationRun(

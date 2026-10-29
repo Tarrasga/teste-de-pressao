@@ -4,20 +4,27 @@ import com.testedepressao.app.data.models.AccelerationRun
 import com.testedepressao.app.data.models.AccelerationState
 import com.testedepressao.app.data.models.ConnectionStatus
 import com.testedepressao.app.data.models.DiagnosticTroubleCode
+import com.testedepressao.app.data.models.SensorCategory
+import com.testedepressao.app.data.models.SensorItem
 import com.testedepressao.app.data.models.VehicleTelemetry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlin.math.max
 
 class ObdManager(
     private val bluetoothManager: CarBluetoothManager,
+    private val settingsPreferences: SettingsPreferences,
     private val scope: CoroutineScope
 ) {
     private val _telemetry = MutableStateFlow(VehicleTelemetry())
@@ -43,6 +50,159 @@ class ObdManager(
     private var launchStartTime: Long = 0L
 
     private var barometricPressureKpa = 101 // ~1.01 Bar atmospheric pressure
+    private var secondarySensorIndex = 0
+
+    // Full list of sensors combined with current telemetry and enabled state
+    val allSensors: StateFlow<List<SensorItem>> = combine(
+        _telemetry,
+        settingsPreferences.enabledSensors
+    ) { telem, enabledSet ->
+        listOf(
+            SensorItem(
+                id = "turbo",
+                name = "Pressão de Turbo (Boost)",
+                pid = "010B",
+                category = SensorCategory.MOTOR,
+                unit = "Bar",
+                value = String.format(Locale.US, "%+.2f", telem.boostPressureBar),
+                numericValue = telem.boostPressureBar,
+                isEnabled = enabledSet.contains("turbo"),
+                description = "Calculado a partir do MAP subtraindo a pressão barométrica."
+            ),
+            SensorItem(
+                id = "rpm",
+                name = "Rotações do Motor",
+                pid = "010C",
+                category = SensorCategory.MOTOR,
+                unit = "RPM",
+                value = "${telem.rpm}",
+                numericValue = telem.rpm.toFloat(),
+                isEnabled = enabledSet.contains("rpm"),
+                description = "Velocidade de rotação da cambota em rotações por minuto."
+            ),
+            SensorItem(
+                id = "speed",
+                name = "Velocidade Real",
+                pid = "010D",
+                category = SensorCategory.DINAMICA,
+                unit = "km/h",
+                value = "${telem.speedKmh}",
+                numericValue = telem.speedKmh.toFloat(),
+                isEnabled = enabledSet.contains("speed"),
+                description = "Velocidade reportada pelo sensor de velocidade do veículo (VSS)."
+            ),
+            SensorItem(
+                id = "coolant",
+                name = "Líquido de Refrigeração",
+                pid = "0105",
+                category = SensorCategory.TEMPERATURAS,
+                unit = "°C",
+                value = "${telem.coolantTempC}",
+                numericValue = telem.coolantTempC.toFloat(),
+                isEnabled = enabledSet.contains("coolant"),
+                description = "Temperatura da água/anticongelante do circuito do motor."
+            ),
+            SensorItem(
+                id = "oil_temp",
+                name = "Temperatura do Óleo",
+                pid = "015C",
+                category = SensorCategory.TEMPERATURAS,
+                unit = "°C",
+                value = telem.oilTempC?.let { "$it" } ?: "--",
+                numericValue = telem.oilTempC?.toFloat() ?: 0f,
+                isEnabled = enabledSet.contains("oil_temp"),
+                description = "Temperatura do óleo lubrificante no cárter (essencial para motores PSA)."
+            ),
+            SensorItem(
+                id = "voltage",
+                name = "Tensão da Bateria / Alternador",
+                pid = "0142",
+                category = SensorCategory.ELETRICA,
+                unit = "V",
+                value = telem.batteryVoltage?.let { String.format(Locale.US, "%.1f", it) } ?: "--",
+                numericValue = telem.batteryVoltage ?: 0f,
+                isEnabled = enabledSet.contains("voltage"),
+                description = "Tensão fornecida pelo alternador e módulo de controlo (13.8V - 14.7V ideal)."
+            ),
+            SensorItem(
+                id = "engine_load",
+                name = "Carga do Motor",
+                pid = "0104",
+                category = SensorCategory.MOTOR,
+                unit = "%",
+                value = telem.engineLoadPercent?.let { "$it" } ?: "--",
+                numericValue = telem.engineLoadPercent?.toFloat() ?: 0f,
+                isEnabled = enabledSet.contains("engine_load"),
+                description = "Percentagem de binário e esforço atual do motor calculada pela centralina."
+            ),
+            SensorItem(
+                id = "intake_temp",
+                name = "Temperatura de Admissão (IAT)",
+                pid = "010F",
+                category = SensorCategory.TEMPERATURAS,
+                unit = "°C",
+                value = telem.intakeAirTempC?.let { "$it" } ?: "--",
+                numericValue = telem.intakeAirTempC?.toFloat() ?: 0f,
+                isEnabled = enabledSet.contains("intake_temp"),
+                description = "Temperatura do ar após a passagem pelo turbocompressor e intercooler."
+            ),
+            SensorItem(
+                id = "throttle",
+                name = "Posição do Acelerador",
+                pid = "0111",
+                category = SensorCategory.DINAMICA,
+                unit = "%",
+                value = telem.throttlePercent?.let { "$it" } ?: "--",
+                numericValue = telem.throttlePercent?.toFloat() ?: 0f,
+                isEnabled = enabledSet.contains("throttle"),
+                description = "Percentagem de pressão no pedal do acelerador."
+            ),
+            SensorItem(
+                id = "maf",
+                name = "Fluxo de Ar (MAF)",
+                pid = "0110",
+                category = SensorCategory.MOTOR,
+                unit = "g/s",
+                value = telem.mafGramsPerSec?.let { String.format(Locale.US, "%.1f", it) } ?: "--",
+                numericValue = telem.mafGramsPerSec ?: 0f,
+                isEnabled = enabledSet.contains("maf"),
+                description = "Volume e massa de ar admitida por segundo medida pelo sensor de fluxo de ar."
+            ),
+            SensorItem(
+                id = "fuel_level",
+                name = "Nível de Combustível",
+                pid = "012F",
+                category = SensorCategory.DINAMICA,
+                unit = "%",
+                value = telem.fuelLevelPercent?.let { "$it" } ?: "--",
+                numericValue = telem.fuelLevelPercent?.toFloat() ?: 0f,
+                isEnabled = enabledSet.contains("fuel_level"),
+                description = "Percentagem de combustível restante no depósito."
+            ),
+            SensorItem(
+                id = "runtime",
+                name = "Tempo de Motor Ligado",
+                pid = "011F",
+                category = SensorCategory.DINAMICA,
+                unit = "min",
+                value = telem.engineRunTimeSec?.let { formatRuntime(it) } ?: "--",
+                numericValue = telem.engineRunTimeSec?.toFloat() ?: 0f,
+                isEnabled = enabledSet.contains("runtime"),
+                description = "Tempo decorrido desde o arranque do motor nesta viagem."
+            ),
+            SensorItem(
+                id = "baro",
+                name = "Pressão Atmosférica",
+                pid = "0133",
+                category = SensorCategory.MOTOR,
+                unit = "kPa",
+                value = "${telem.barometricPressureKpa}",
+                numericValue = telem.barometricPressureKpa.toFloat(),
+                isEnabled = enabledSet.contains("baro"),
+                description = "Pressão do ar ambiente utilizada como referência barométrica."
+            )
+        )
+    }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     init {
         scope.launch {
@@ -63,7 +223,7 @@ class ObdManager(
         bluetoothManager.sendCommand("ATL0", 500)  // Linefeeds Off
         bluetoothManager.sendCommand("ATH0", 500)  // Headers Off
         bluetoothManager.sendCommand("ATSP0", 800) // Auto protocol selection
-        
+
         // Read barometric pressure once
         val baroResp = bluetoothManager.sendCommand("0133", 500)
         parseBaro(baroResp)
@@ -75,39 +235,124 @@ class ObdManager(
         pollingJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 try {
-                    // 1. Manifold Absolute Pressure (MAP) -> For Turbo Boost
-                    val mapResp = bluetoothManager.sendCommand("010B", 300)
-                    val mapKpa = parseSingleBytePid(mapResp, "010B") ?: _telemetry.value.intakePressureKpa
+                    val enabled = settingsPreferences.enabledSensors.value
 
-                    // Boost calculation: (MAP - Baro) / 100 in Bar
-                    val boostBar = ((mapKpa - barometricPressureKpa) / 100.0f).coerceIn(-1.0f, 3.5f)
-                    val currentPeak = max(_telemetry.value.peakBoostBar, boostBar)
+                    // PRIORITY 1: Manifold Absolute Pressure (MAP) for Turbo Boost
+                    var boostBar = _telemetry.value.boostPressureBar
+                    var currentPeak = _telemetry.value.peakBoostBar
+                    var mapKpa = _telemetry.value.intakePressureKpa
 
-                    // 2. Speed (km/h) -> For 0-100 acceleration
-                    val speedResp = bluetoothManager.sendCommand("010D", 250)
-                    val speedKmh = parseSingleBytePid(speedResp, "010D") ?: _telemetry.value.speedKmh
+                    if (enabled.contains("turbo")) {
+                        val mapResp = bluetoothManager.sendCommand("010B", 200)
+                        val parsedMap = parseSingleBytePid(mapResp, "010B")
+                        if (parsedMap != null) {
+                            mapKpa = parsedMap
+                            boostBar = ((mapKpa - barometricPressureKpa) / 100.0f).coerceIn(-1.0f, 3.5f)
+                            currentPeak = max(currentPeak, boostBar)
+                        }
+                    }
 
-                    // 3. RPM
-                    val rpmResp = bluetoothManager.sendCommand("010C", 250)
-                    val rpm = parseRpm(rpmResp) ?: _telemetry.value.rpm
+                    // PRIORITY 2: Speed (km/h) for 0-100 acceleration
+                    var speedKmh = _telemetry.value.speedKmh
+                    if (enabled.contains("speed") || _accelerationState.value.isArmed || _accelerationState.value.isRunning) {
+                        val speedResp = bluetoothManager.sendCommand("010D", 180)
+                        val parsedSpeed = parseSingleBytePid(speedResp, "010D")
+                        if (parsedSpeed != null) {
+                            speedKmh = parsedSpeed
+                        }
+                    }
 
-                    // 4. Coolant Temp (°C)
-                    val tempResp = bluetoothManager.sendCommand("0105", 250)
-                    val tempC = parseTemp(tempResp) ?: _telemetry.value.coolantTempC
+                    // PRIORITY 3: RPM
+                    var rpm = _telemetry.value.rpm
+                    if (enabled.contains("rpm")) {
+                        val rpmResp = bluetoothManager.sendCommand("010C", 180)
+                        val parsedRpm = parseRpm(rpmResp)
+                        if (parsedRpm != null) {
+                            rpm = parsedRpm
+                        }
+                    }
+
+                    // SECONDARY SENSORS: Round-Robin (one sensor per loop to keep turbo refresh rate fast!)
+                    var coolantTemp = _telemetry.value.coolantTempC
+                    var oilTemp = _telemetry.value.oilTempC
+                    var voltage = _telemetry.value.batteryVoltage
+                    var engineLoad = _telemetry.value.engineLoadPercent
+                    var intakeTemp = _telemetry.value.intakeAirTempC
+                    var throttle = _telemetry.value.throttlePercent
+                    var maf = _telemetry.value.mafGramsPerSec
+                    var fuelLevel = _telemetry.value.fuelLevelPercent
+                    var runtimeSec = _telemetry.value.engineRunTimeSec
+
+                    val secondaryPool = listOf(
+                        "coolant", "oil_temp", "voltage", "engine_load",
+                        "intake_temp", "throttle", "maf", "fuel_level", "runtime"
+                    ).filter { enabled.contains(it) }
+
+                    if (secondaryPool.isNotEmpty()) {
+                        secondarySensorIndex = (secondarySensorIndex + 1) % secondaryPool.size
+                        val targetSensor = secondaryPool[secondarySensorIndex]
+
+                        when (targetSensor) {
+                            "coolant" -> {
+                                val resp = bluetoothManager.sendCommand("0105", 200)
+                                parseTemp(resp)?.let { coolantTemp = it }
+                            }
+                            "oil_temp" -> {
+                                val resp = bluetoothManager.sendCommand("015C", 200)
+                                parseSingleBytePid(resp, "015C")?.let { oilTemp = it - 40 }
+                            }
+                            "voltage" -> {
+                                val resp = bluetoothManager.sendCommand("0142", 200)
+                                parseTwoByteVoltage(resp)?.let { voltage = it }
+                            }
+                            "engine_load" -> {
+                                val resp = bluetoothManager.sendCommand("0104", 200)
+                                parsePercent(resp, "0104")?.let { engineLoad = it }
+                            }
+                            "intake_temp" -> {
+                                val resp = bluetoothManager.sendCommand("010F", 200)
+                                parseSingleBytePid(resp, "010F")?.let { intakeTemp = it - 40 }
+                            }
+                            "throttle" -> {
+                                val resp = bluetoothManager.sendCommand("0111", 200)
+                                parsePercent(resp, "0111")?.let { throttle = it }
+                            }
+                            "maf" -> {
+                                val resp = bluetoothManager.sendCommand("0110", 200)
+                                parseMaf(resp)?.let { maf = it }
+                            }
+                            "fuel_level" -> {
+                                val resp = bluetoothManager.sendCommand("012F", 200)
+                                parsePercent(resp, "012F")?.let { fuelLevel = it }
+                            }
+                            "runtime" -> {
+                                val resp = bluetoothManager.sendCommand("011F", 200)
+                                parseTwoByteInt(resp, "011F")?.let { runtimeSec = it }
+                            }
+                        }
+                    }
 
                     _telemetry.value = _telemetry.value.copy(
                         boostPressureBar = boostBar,
                         peakBoostBar = currentPeak,
                         rpm = rpm,
                         speedKmh = speedKmh,
-                        coolantTempC = tempC,
+                        coolantTempC = coolantTemp,
+                        oilTempC = oilTemp,
+                        batteryVoltage = voltage,
+                        engineLoadPercent = engineLoad,
+                        intakeAirTempC = intakeTemp,
+                        throttlePercent = throttle,
+                        mafGramsPerSec = maf,
+                        fuelLevelPercent = fuelLevel,
+                        engineRunTimeSec = runtimeSec,
                         intakePressureKpa = mapKpa,
                         barometricPressureKpa = barometricPressureKpa
                     )
 
                     updateAccelerationTest(speedKmh)
                 } catch (e: Exception) {
-                    delay(500)
+                    delay(300)
                 }
             }
         }
@@ -212,7 +457,7 @@ class ObdManager(
         return "Comando de limpeza (Modo 04) enviado: $resp"
     }
 
-    // --- Peugeot 508 / PSA Lab: Cores e Comandos Avançados ---
+    // --- Peugeot 508 / PSA Lab ---
 
     suspend fun sendCustomElmCommand(command: String): String {
         logPsa(">> $command")
@@ -233,14 +478,14 @@ class ObdManager(
 
     suspend fun testPeugeotSportMode(): String {
         logPsa("--- Testar Modo Sport (Ativar Vermelho no Painel) ---")
-        sendCustomElmCommand("ATSH 7B0") // Set Header to NAC/BSI
-        return sendCustomElmCommand("2F 12 34 03 01") // Mock I/O control for sport ambiance
+        sendCustomElmCommand("ATSH 7B0")
+        return sendCustomElmCommand("2F 12 34 03 01")
     }
 
     suspend fun testPeugeotThemeCopper(): String {
         logPsa("--- Testar Tema Cuivré / Cobre (Original 508) ---")
-        sendCustomElmCommand("ATSH 7B3") // Infotainment NAC Address
-        return sendCustomElmCommand("22 21 00") // Read Display Parameters
+        sendCustomElmCommand("ATSH 7B3")
+        return sendCustomElmCommand("22 21 00")
     }
 
     private fun logPsa(msg: String) {
@@ -273,29 +518,44 @@ class ObdManager(
             var simRpm = 850
             var simBoost = -0.65f
             var timeStep = 0f
+            var simRuntime = 120
 
             while (isActive) {
                 timeStep += 0.1f
-                // Simulate driving dynamics
+                simRuntime += 1
+
                 if (_accelerationState.value.isArmed || _accelerationState.value.isRunning) {
-                    // Accelerating hard!
                     simSpeed = (simSpeed + 3).coerceAtMost(120)
                     simRpm = 2000 + (simSpeed * 40) % 4500
                     simBoost = (1.45f + kotlin.math.sin(timeStep.toDouble()).toFloat() * 0.3f).coerceIn(0.5f, 2.1f)
                 } else {
-                    // Normal cruising
                     simSpeed = (50 + kotlin.math.sin(timeStep * 0.5).toFloat() * 15).toInt()
                     simRpm = 1800 + (simSpeed * 10)
                     simBoost = (0.2f + kotlin.math.sin(timeStep.toDouble()).toFloat() * 0.5f).coerceIn(-0.7f, 1.3f)
                 }
 
                 val currentPeak = max(_telemetry.value.peakBoostBar, simBoost)
+                val simOil = 92 + (simSpeed / 20)
+                val simVoltage = 14.2f + kotlin.math.sin(timeStep.toDouble()).toFloat() * 0.2f
+                val simLoad = (25 + (simBoost.coerceAtLeast(0f) * 35)).toInt().coerceIn(10, 99)
+                val simIat = 28 + (simBoost.coerceAtLeast(0f) * 8).toInt()
+                val simThrottle = (simLoad * 0.9f).toInt()
+                val simMaf = (12.0f + (simRpm / 100f) * 2.5f)
+
                 _telemetry.value = VehicleTelemetry(
                     boostPressureBar = simBoost,
                     peakBoostBar = currentPeak,
                     rpm = simRpm,
                     speedKmh = simSpeed,
                     coolantTempC = 90,
+                    oilTempC = simOil,
+                    batteryVoltage = simVoltage,
+                    engineLoadPercent = simLoad,
+                    intakeAirTempC = simIat,
+                    throttlePercent = simThrottle,
+                    mafGramsPerSec = simMaf,
+                    fuelLevelPercent = 68,
+                    engineRunTimeSec = simRuntime,
                     intakePressureKpa = (101 + simBoost * 100).toInt(),
                     barometricPressureKpa = 101
                 )
@@ -319,6 +579,11 @@ class ObdManager(
         return null
     }
 
+    private fun parsePercent(response: String, pid: String): Int? {
+        val b = parseSingleBytePid(response, pid) ?: return null
+        return (b * 100) / 255
+    }
+
     private fun parseRpm(response: String): Int? {
         val clean = response.replace(" ", "").trim()
         val idx = clean.indexOf("410C")
@@ -326,6 +591,40 @@ class ObdManager(
             val a = clean.substring(idx + 4, idx + 6).toIntOrNull(16) ?: return null
             val b = clean.substring(idx + 6, idx + 8).toIntOrNull(16) ?: return null
             return ((a * 256) + b) / 4
+        }
+        return null
+    }
+
+    private fun parseTwoByteVoltage(response: String): Float? {
+        val clean = response.replace(" ", "").trim()
+        val idx = clean.indexOf("4142")
+        if (idx != -1 && idx + 8 <= clean.length) {
+            val a = clean.substring(idx + 4, idx + 6).toIntOrNull(16) ?: return null
+            val b = clean.substring(idx + 6, idx + 8).toIntOrNull(16) ?: return null
+            return ((a * 256) + b) / 1000.0f
+        }
+        return null
+    }
+
+    private fun parseMaf(response: String): Float? {
+        val clean = response.replace(" ", "").trim()
+        val idx = clean.indexOf("4110")
+        if (idx != -1 && idx + 8 <= clean.length) {
+            val a = clean.substring(idx + 4, idx + 6).toIntOrNull(16) ?: return null
+            val b = clean.substring(idx + 6, idx + 8).toIntOrNull(16) ?: return null
+            return ((a * 256) + b) / 100.0f
+        }
+        return null
+    }
+
+    private fun parseTwoByteInt(response: String, pid: String): Int? {
+        val clean = response.replace(" ", "").trim()
+        val expected = "41" + pid.substring(2)
+        val idx = clean.indexOf(expected)
+        if (idx != -1 && idx + 8 <= clean.length) {
+            val a = clean.substring(idx + 4, idx + 6).toIntOrNull(16) ?: return null
+            val b = clean.substring(idx + 6, idx + 8).toIntOrNull(16) ?: return null
+            return (a * 256) + b
         }
         return null
     }
@@ -342,6 +641,12 @@ class ObdManager(
         }
     }
 
+    private fun formatRuntime(seconds: Int): String {
+        val m = seconds / 60
+        val s = seconds % 60
+        return String.format(Locale.US, "%02d:%02d", m, s)
+    }
+
     private fun parseDtcResponse(response: String): List<DiagnosticTroubleCode> {
         val list = mutableListOf<DiagnosticTroubleCode>()
         val clean = response.replace(" ", "").trim()
@@ -349,7 +654,6 @@ class ObdManager(
             return list
         }
 
-        // Standard OBD DTC response: 43 [count] [code1] [code2]...
         val idx = clean.indexOf("43")
         if (idx != -1 && idx + 4 <= clean.length) {
             val codesHex = clean.substring(idx + 2)
@@ -369,7 +673,7 @@ class ObdManager(
                 val firstDigit = (hex1 and 0x30) shr 4
                 val secondDigit = hex1 and 0x0F
                 val code = "$prefix$firstDigit$secondDigit$hex2"
-                
+
                 list.add(DiagnosticTroubleCode(code, lookupDtcDescription(code)))
                 i += 4
             }

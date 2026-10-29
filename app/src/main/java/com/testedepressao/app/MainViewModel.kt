@@ -6,15 +6,20 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.testedepressao.app.data.CarBluetoothManager
 import com.testedepressao.app.data.ObdManager
+import com.testedepressao.app.data.SettingsPreferences
+import com.testedepressao.app.data.UpdateManager
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val bluetoothManager = CarBluetoothManager(application)
-    val obdManager = ObdManager(bluetoothManager, viewModelScope)
+    val settingsPreferences = SettingsPreferences(application)
+    val updateManager = UpdateManager(application)
+    val obdManager = ObdManager(bluetoothManager, settingsPreferences, viewModelScope)
 
     val telemetry = obdManager.telemetry
+    val allSensors = obdManager.allSensors
     val accelerationState = obdManager.accelerationState
     val dtcCodes = obdManager.dtcCodes
     val isScanningDtc = obdManager.isScanningDtc
@@ -23,6 +28,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val connectionStatus = bluetoothManager.connectionStatus
     val connectedDeviceName = bluetoothManager.connectedDeviceName
+
+    val keepScreenOn = settingsPreferences.keepScreenOn
+    val updateInfo = updateManager.updateInfo
+    val isCheckingUpdate = updateManager.isChecking
+    val isDownloadingUpdate = updateManager.isDownloading
+    val downloadProgress = updateManager.downloadProgress
+    val updateStatusMessage = updateManager.statusMessage
+    val currentVersionName = updateManager.getCurrentVersionName()
 
     fun getBondedDevices(): List<BluetoothDevice> {
         return bluetoothManager.getBondedDevices()
@@ -59,6 +72,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearDtc() {
         viewModelScope.launch {
             obdManager.clearDtcCodes()
+        }
+    }
+
+    fun setKeepScreenOn(enabled: Boolean) {
+        settingsPreferences.setKeepScreenOn(enabled)
+    }
+
+    fun toggleSensor(sensorId: String, isEnabled: Boolean) {
+        settingsPreferences.setSensorEnabled(sensorId, isEnabled)
+    }
+
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            updateManager.checkForUpdates()
+        }
+    }
+
+    fun downloadAndInstallUpdate(apkUrl: String) {
+        viewModelScope.launch {
+            updateManager.downloadAndInstall(apkUrl)
         }
     }
 
