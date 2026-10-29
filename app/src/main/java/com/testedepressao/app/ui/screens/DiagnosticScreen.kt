@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -35,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.testedepressao.app.data.models.DiagnosticTroubleCode
@@ -43,6 +45,7 @@ import com.testedepressao.app.ui.theme.DarkBorder
 import com.testedepressao.app.ui.theme.DarkSurface
 import com.testedepressao.app.ui.theme.DarkSurfaceElevated
 import com.testedepressao.app.ui.theme.NeonCyan
+import com.testedepressao.app.ui.theme.PeugeotCopper
 import com.testedepressao.app.ui.theme.RaceRed
 import com.testedepressao.app.ui.theme.SuccessGreen
 import com.testedepressao.app.ui.theme.TextPrimary
@@ -53,7 +56,9 @@ import com.testedepressao.app.ui.theme.WarningAmber
 fun DiagnosticScreen(
     codes: List<DiagnosticTroubleCode>,
     isScanning: Boolean,
+    isScanningPsa: Boolean = false,
     onScan: () -> Unit,
+    onScanPsa: () -> Unit = {},
     onClear: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -68,53 +73,81 @@ fun DiagnosticScreen(
         // Top Action Buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Standard Scan
             Button(
                 onClick = onScan,
-                enabled = !isScanning,
+                enabled = !isScanning && !isScanningPsa,
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = NeonCyan,
-                    contentColor = CarbonBlack
+                    containerColor = DarkSurfaceElevated,
+                    contentColor = TextPrimary
                 ),
                 shape = RoundedCornerShape(10.dp)
             ) {
                 if (isScanning) {
                     CircularProgressIndicator(
-                        modifier = Modifier.padding(end = 8.dp),
-                        color = CarbonBlack,
+                        modifier = Modifier.padding(end = 6.dp),
+                        color = NeonCyan,
                         strokeWidth = 2.dp
                     )
-                    Text("A verificar...", fontSize = 13.sp)
+                    Text("A ler...", fontSize = 11.sp)
                 } else {
-                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
-                    Text("Ler Erros (DTC)", fontSize = 13.sp)
+                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.padding(end = 4.dp), tint = NeonCyan)
+                    Text("Scan OBD", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
+            // Advanced PSA BSI Scan
+            Button(
+                onClick = onScanPsa,
+                enabled = !isScanning && !isScanningPsa,
+                modifier = Modifier
+                    .weight(1.3f)
+                    .height(48.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PeugeotCopper,
+                    contentColor = CarbonBlack
+                ),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                if (isScanningPsa) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(end = 6.dp),
+                        color = CarbonBlack,
+                        strokeWidth = 2.dp
+                    )
+                    Text("A ler BSI...", fontSize = 11.sp)
+                } else {
+                    Icon(Icons.Default.DirectionsCar, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
+                    Text("Scan BSI / Peugeot", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // Clear codes
             OutlinedButton(
                 onClick = { showConfirmClearDialog = true },
-                enabled = !isScanning,
+                enabled = !isScanning && !isScanningPsa,
                 modifier = Modifier
-                    .weight(1f)
+                    .weight(0.9f)
                     .height(48.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = RaceRed
                 ),
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
-                Text("Apagar Erros", fontSize = 13.sp)
+                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.padding(end = 2.dp))
+                Text("Limpar", fontSize = 11.sp)
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Content Area
-        if (codes.isEmpty() && !isScanning) {
+        if (codes.isEmpty() && !isScanning && !isScanningPsa) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -133,12 +166,13 @@ fun DiagnosticScreen(
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
                 Text(
-                    text = "Sem Códigos de Avaria",
+                    text = "Sem Códigos de Avaria Registados",
                     color = TextPrimary,
-                    fontSize = 16.sp
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "A centralina do motor não reportou erros ativos no momento. Clique em 'Ler Erros' para fazer uma nova verificação.",
+                    text = "Clique em 'Scan BSI / Peugeot' para ler diretamente a memória de avarias da BSI (códigos B), Motor PSA e Rede CAN.",
                     color = TextSecondary,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(top = 6.dp),
@@ -153,12 +187,15 @@ fun DiagnosticScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(codes) { dtc ->
+                    val isBsi = dtc.code.startsWith("B") || dtc.ecuSource.contains("BSI")
+                    val borderColor = if (isBsi) PeugeotCopper else RaceRed
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
                             .background(DarkSurface)
-                            .border(1.dp, RaceRed.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            .border(1.dp, borderColor.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
                             .padding(14.dp)
                     ) {
                         Row(
@@ -166,11 +203,29 @@ fun DiagnosticScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = dtc.code,
-                                color = RaceRed,
-                                fontSize = 18.sp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = dtc.code,
+                                    color = if (isBsi) PeugeotCopper else RaceRed,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Spacer(modifier = Modifier.padding(start = 6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(DarkSurfaceElevated)
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = dtc.ecuSource,
+                                        color = TextSecondary,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(6.dp))
@@ -189,7 +244,8 @@ fun DiagnosticScreen(
                         Text(
                             text = dtc.description,
                             color = TextPrimary,
-                            fontSize = 13.sp
+                            fontSize = 13.sp,
+                            lineHeight = 17.sp
                         )
                     }
                 }

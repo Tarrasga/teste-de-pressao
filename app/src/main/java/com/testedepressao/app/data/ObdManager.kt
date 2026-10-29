@@ -2,6 +2,8 @@ package com.testedepressao.app.data
 
 import com.testedepressao.app.data.models.AccelerationRun
 import com.testedepressao.app.data.models.AccelerationState
+import com.testedepressao.app.data.models.BatteryCondition
+import com.testedepressao.app.data.models.BatteryHealthData
 import com.testedepressao.app.data.models.ConnectionStatus
 import com.testedepressao.app.data.models.DiagnosticTroubleCode
 import com.testedepressao.app.data.models.SensorCategory
@@ -38,6 +40,12 @@ class ObdManager(
 
     private val _isScanningDtc = MutableStateFlow(false)
     val isScanningDtc: StateFlow<Boolean> = _isScanningDtc.asStateFlow()
+
+    private val _isScanningPsaDtc = MutableStateFlow(false)
+    val isScanningPsaDtc: StateFlow<Boolean> = _isScanningPsaDtc.asStateFlow()
+
+    private val _batteryHealth = MutableStateFlow(BatteryHealthData())
+    val batteryHealth: StateFlow<BatteryHealthData> = _batteryHealth.asStateFlow()
 
     private val _isDemoMode = MutableStateFlow(false)
     val isDemoMode: StateFlow<Boolean> = _isDemoMode.asStateFlow()
@@ -303,7 +311,10 @@ class ObdManager(
                             }
                             "voltage" -> {
                                 val resp = bluetoothManager.sendCommand("0142", 200)
-                                parseTwoByteVoltage(resp)?.let { voltage = it }
+                                parseTwoByteVoltage(resp)?.let {
+                                    voltage = it
+                                    updateBatteryHealth(it, rpm)
+                                }
                             }
                             "engine_load" -> {
                                 val resp = bluetoothManager.sendCommand("0104", 200)
@@ -418,6 +429,78 @@ class ObdManager(
         _telemetry.value = _telemetry.value.copy(peakBoostBar = _telemetry.value.boostPressureBar)
     }
 
+    // --- Battery Health Analysis ---
+
+    fun resetCrankTest() {
+        val current = _batteryHealth.value
+        _batteryHealth.value = current.copy(
+            minCrankVoltage = null,
+            recommendation = "Dê à chave / arranque o motor para registar a queda mínima de tensão."
+        )
+    }
+
+    fun updateBatteryHealth(voltage: Float, rpm: Int) {
+        val current = _batteryHealth.value
+        val isEngineRunning = rpm > 500
+        val isCharging = voltage >= 13.5f
+
+        var resting = current.restingVoltage
+        var minCrank = current.minCrankVoltage
+        var charging = current.chargingVoltage
+
+        if (!isEngineRunning) {
+            // Engine stopped: measure resting open-circuit voltage
+            resting = if (resting == null) voltage else (resting * 0.9f + voltage * 0.1f)
+        } else {
+            // Engine running: measure charging voltage
+            charging = if (charging == null) voltage else (charging * 0.9f + voltage * 0.1f)
+        }
+
+        // Detect cranking drop: if engine starts or voltage dips sharply
+        if (voltage in 6.0f..11.8f) {
+            minCrank = if (minCrank == null) voltage else minOf(minCrank, voltage)
+        }
+
+        // State of Charge (SoC) estimation based on AGM battery resting voltage curve
+        val refVolt = resting ?: voltage
+        val soc = when {
+            refVolt >= 12.80f -> 100
+            refVolt >= 12.65f -> 95
+            refVolt >= 12.50f -> 85
+            refVolt >= 12.35f -> 70
+            refVolt >= 12.20f -> 55
+            refVolt >= 12.05f -> 40
+            refVolt >= 11.90f -> 25
+            else -> 10
+        }
+
+        val condition = when {
+            minCrank != null && minCrank < 9.0f -> BatteryCondition.CRITICA
+            (resting != null && resting < 12.10f) || (minCrank != null && minCrank < 9.6f) || soc < 50 -> BatteryCondition.FRACA
+            soc >= 85 && (minCrank == null || minCrank >= 10.2f) -> BatteryCondition.EXCELENTE
+            else -> BatteryCondition.BOA
+        }
+
+        val recommendation = when (condition) {
+            BatteryCondition.CRITICA -> "Aviso Crítico: Bateria muito degradada (<9.0V no arranque). Risco de não pegar."
+            BatteryCondition.FRACA -> "Bateria Fraca (<12.2V): É a causa do corte elétrico 'Modo Economia de Energia' prematuro no seu 508 e da desativação do Start&Stop."
+            BatteryCondition.BOA -> "Bateria em bom estado operacional. Alternador a carregar normalmente."
+            BatteryCondition.EXCELENTE -> "Bateria em estado excelente (tensão e resposta de arranque ideais)."
+        }
+
+        _batteryHealth.value = BatteryHealthData(
+            liveVoltage = voltage,
+            restingVoltage = resting,
+            minCrankVoltage = minCrank,
+            chargingVoltage = charging,
+            estimatedSocPercent = soc,
+            isAlternatorCharging = isCharging,
+            isEngineRunning = isEngineRunning,
+            condition = condition,
+            recommendation = recommendation
+        )
+    }
+
     // --- Diagnostic Trouble Codes (DTC) ---
 
     suspend fun readDtcCodes() {
@@ -442,6 +525,50 @@ class ObdManager(
             _dtcCodes.value = emptyList()
         } finally {
             _isScanningDtc.value = false
+        }
+    }
+
+    suspend fun readAdvancedPsaDtcCodes() {
+        _isScanningPsaDtc.value = true
+        _dtcCodes.value = emptyList()
+
+        if (_isDemoMode.value) {
+            delay(1800)
+            _dtcCodes.value = listOf(
+                DiagnosticTroubleCode("B1805", "Inibição de paragem automática Start&Stop (Causa habitual: Bateria de 12V com carga insuficiente)", "Aviso", "BSI (Carroçaria)"),
+                DiagnosticTroubleCode("B1003", "Defeito de telecodificação segura da BSI", "Informativo", "BSI (Carroçaria)"),
+                DiagnosticTroubleCode("P1351", "Circuito do relé de pré-aquecimento - Velas de incandescência não alimentadas", "Aviso", "Motor PSA (CMM)"),
+                DiagnosticTroubleCode("U1218", "Comunicação na rede CAN com a BSI - Dados inválidos recebidos", "Informativo", "Rede CAN")
+            )
+            _isScanningPsaDtc.value = false
+            return
+        }
+
+        val allPsaCodes = mutableListOf<DiagnosticTroubleCode>()
+        try {
+            // 1. Scan BSI via UDS (ID 0x752)
+            bluetoothManager.sendCommand("ATSH 752", 300)
+            val bsiResp = bluetoothManager.sendCommand("19 02 FF", 2000)
+            allPsaCodes.addAll(parsePsaUdsDtcResponse(bsiResp, "BSI (Carroçaria)"))
+
+            // 2. Scan Engine ECU via UDS (ID 0x7E0)
+            bluetoothManager.sendCommand("ATSH 7E0", 300)
+            val engineResp = bluetoothManager.sendCommand("19 02 FF", 2000)
+            allPsaCodes.addAll(parsePsaUdsDtcResponse(engineResp, "Motor PSA"))
+
+            // 3. Scan Instrument Cluster Combine (ID 0x7B0)
+            bluetoothManager.sendCommand("ATSH 7B0", 300)
+            val clusterResp = bluetoothManager.sendCommand("19 02 FF", 2000)
+            allPsaCodes.addAll(parsePsaUdsDtcResponse(clusterResp, "i-Cockpit"))
+
+            // Reset header back to standard broadcast
+            bluetoothManager.sendCommand("ATSH 7DF", 300)
+
+            _dtcCodes.value = allPsaCodes
+        } catch (e: Exception) {
+            _dtcCodes.value = allPsaCodes
+        } finally {
+            _isScanningPsaDtc.value = false
         }
     }
 
@@ -560,6 +687,7 @@ class ObdManager(
                     barometricPressureKpa = 101
                 )
 
+                updateBatteryHealth(simVoltage, simRpm)
                 updateAccelerationTest(simSpeed)
                 delay(100)
             }
@@ -679,6 +807,83 @@ class ObdManager(
             }
         }
         return list
+    }
+
+    private fun parsePsaUdsDtcResponse(response: String, ecuSource: String): List<DiagnosticTroubleCode> {
+        val list = mutableListOf<DiagnosticTroubleCode>()
+        val clean = response.replace(" ", "").trim()
+
+        // UDS Positive response to 19 02 FF starts with 59 02
+        val idx = clean.indexOf("5902")
+        if (idx != -1 && idx + 6 <= clean.length) {
+            val payload = clean.substring(idx + 4) // skip 5902 and status availability mask
+            // Each DTC is 3 bytes (DTC High, DTC Middle, DTC Low/Fault symptom) + 1 byte (Status) = 8 hex chars
+            var i = 2 // skip availability mask byte
+            while (i + 8 <= payload.length) {
+                val hex1 = payload.substring(i, i + 2).toIntOrNull(16) ?: break
+                val hex2 = payload.substring(i + 2, i + 4)
+                val hexSub = payload.substring(i + 4, i + 6) // fault symptom
+                val statusHex = payload.substring(i + 6, i + 8).toIntOrNull(16) ?: 0
+
+                val prefix = when ((hex1 and 0xC0) shr 6) {
+                    0 -> "P"
+                    1 -> "C"
+                    2 -> "B"
+                    3 -> "U"
+                    else -> "P"
+                }
+                val firstDigit = (hex1 and 0x30) shr 4
+                val secondDigit = hex1 and 0x0F
+                val baseCode = "$prefix$firstDigit$secondDigit$hex2"
+                val fullCode = if (hexSub != "00") "$baseCode-$hexSub" else baseCode
+
+                val severity = if ((statusHex and 0x08) != 0) "Ativo Confirmado" else "Intermitente"
+                list.add(
+                    DiagnosticTroubleCode(
+                        code = fullCode,
+                        description = lookupPsaDtcDescription(baseCode),
+                        severity = severity,
+                        ecuSource = ecuSource
+                    )
+                )
+                i += 8
+            }
+        }
+        return list
+    }
+
+    private fun lookupPsaDtcDescription(code: String): String {
+        return when (code) {
+            // Peugeot BSI (B-codes)
+            "B1805" -> "BSI: Inibição do corte do motor Start & Stop (Habitualmente causado por estado de carga insuficiente da Bateria 12V)"
+            "B1003" -> "BSI: Defeito de segurança ou telecodificação segura não inicializada"
+            "B1624" -> "BSI: Relé de corte de alimentação do circuito de potência ou proteção"
+            "B1808" -> "BSI: Reconhecimento do transponder da chave de ignição"
+            "B1818" -> "BSI: Sinal do sensor de nível e qualidade do óleo do motor"
+            "B1101" -> "BSI: Defeito no comando de iluminação exterior ou luz de mínimos"
+            "B1153" -> "BSI: Anomalia no circuito de iluminação de presença ou médios"
+            "B1328" -> "BSI: Anomalia no módulo de gestão de energia e proteção da bateria (BECB)"
+
+            // Peugeot Engine (P1-codes / P-codes)
+            "P1351" -> "Motor PSA: Circuito do relé de pré-aquecimento - Velas de incandescência comandadas mas não alimentadas"
+            "P1434" -> "Motor PSA: Bomba de injeção de aditivo de combustível (Eolys/FAP) - Circuito aberto ou avaria"
+            "P1435" -> "Motor PSA: Bomba de aditivação FAP - Erro de rede ou comunicação"
+            "P1445" -> "Motor PSA: Aditivo no filtro de partículas - Quantidade máxima atingida no FAP"
+            "P1693" -> "Motor PSA: Linha de arranque pilotado - Arranque do motor impossibilitado"
+            "P20EE" -> "Motor PSA: Eficiência do catalisador SCR DeNOx/AdBlue abaixo do limite"
+            "P2463" -> "Motor PSA: Sobrecarga de fuligem no Filtro de Partículas (FAP) - Regeneração necessária"
+            "P0234" -> "Motor: Condição de Sobrepressão do Turbocompressor (Overboost)"
+            "P0299" -> "Motor: Subpressão no Turbocompressor (Underboost)"
+
+            // Network & Chassis (U-codes & C-codes)
+            "U1218" -> "Rede CAN: Comunicação com a BSI - Recebidos dados inválidos"
+            "U1118" -> "Rede CAN: Ausência temporária de comunicação com a BSI"
+            "U1208" -> "Rede CAN: Comunicação com o calculador do motor - Dados inválidos"
+            "C1145" -> "Chassis: Sensor de velocidade de roda ou travão de estacionamento elétrico"
+            "C1555" -> "Chassis: Calibração da direção assistida elétrica"
+
+            else -> lookupDtcDescription(code)
+        }
     }
 
     private fun lookupDtcDescription(code: String): String {

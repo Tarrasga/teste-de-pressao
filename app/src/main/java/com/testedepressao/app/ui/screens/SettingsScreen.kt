@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryAlert
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
@@ -64,6 +65,7 @@ fun SettingsScreen(
     statusMessage: String?,
     onCheckUpdate: () -> Unit,
     onDownloadAndInstall: (String) -> Unit,
+    onOpenBatteryHealth: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onOpenPeugeotLab: () -> Unit,
     modifier: Modifier = Modifier
@@ -234,16 +236,34 @@ fun SettingsScreen(
             }
         }
 
-        // --- 3. Diagnóstico e Laboratório ---
+        // --- 3. Bateria & Ferramentas Peugeot ---
         item {
             Text(
-                text = "DIAGNÓSTICO & FERRAMENTAS PEUGEOT",
+                text = "BATERIA & DIAGNÓSTICO PEUGEOT 508",
                 color = TextSecondary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
             Spacer(modifier = Modifier.height(6.dp))
+
+            // Battery Health Button
+            Button(
+                onClick = onOpenBatteryHealth,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = DarkSurfaceElevated,
+                    contentColor = SuccessGreen
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.BatteryAlert, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                Text("Saúde da Bateria 12V (SoC & Teste Arranque)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -261,7 +281,7 @@ fun SettingsScreen(
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
-                    Text("Ler Erros DTC", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Diagnóstico BSI", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Button(

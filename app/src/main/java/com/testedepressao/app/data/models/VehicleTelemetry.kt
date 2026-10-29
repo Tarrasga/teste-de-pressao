@@ -37,7 +37,8 @@ data class AccelerationState(
 data class DiagnosticTroubleCode(
     val code: String,
     val description: String,
-    val severity: String = "Aviso"
+    val severity: String = "Aviso",
+    val ecuSource: String = "Genérico OBD"
 )
 
 enum class ConnectionStatus {

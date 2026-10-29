@@ -25,6 +25,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val accelerationState = obdManager.accelerationState
     val dtcCodes = obdManager.dtcCodes
     val isScanningDtc = obdManager.isScanningDtc
+    val isScanningPsaDtc = obdManager.isScanningPsaDtc
+    val batteryHealth = obdManager.batteryHealth
     val psaConsoleLog = obdManager.psaConsoleLog
     val isDemoMode = obdManager.isDemoMode
 
@@ -76,6 +78,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             obdManager.readDtcCodes()
         }
+    }
+
+    fun scanAdvancedPsaDtc() {
+        viewModelScope.launch {
+            obdManager.readAdvancedPsaDtcCodes()
+        }
+    }
+
+    fun resetCrankTest() {
+        obdManager.resetCrankTest()
     }
 
     fun clearDtc() {

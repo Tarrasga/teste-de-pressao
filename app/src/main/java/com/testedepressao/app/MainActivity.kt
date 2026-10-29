@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.testedepressao.app.data.models.ConnectionStatus
 import com.testedepressao.app.ui.screens.AccelerationScreen
+import com.testedepressao.app.ui.screens.BatteryHealthScreen
 import com.testedepressao.app.ui.screens.BluetoothDeviceDialog
 import com.testedepressao.app.ui.screens.DiagnosticScreen
 import com.testedepressao.app.ui.screens.LiveTelemetryScreen
@@ -112,6 +113,7 @@ fun MainAppContent(viewModel: MainViewModel) {
     var showBluetoothDialog by remember { mutableStateOf(false) }
     var showPeugeotLabModal by remember { mutableStateOf(false) }
     var showDiagnosticsModal by remember { mutableStateOf(false) }
+    var showBatteryModal by remember { mutableStateOf(false) }
 
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val connectedDeviceName by viewModel.connectedDeviceName.collectAsState()
@@ -123,6 +125,8 @@ fun MainAppContent(viewModel: MainViewModel) {
     val accelerationState by viewModel.accelerationState.collectAsState()
     val dtcCodes by viewModel.dtcCodes.collectAsState()
     val isScanningDtc by viewModel.isScanningDtc.collectAsState()
+    val isScanningPsaDtc by viewModel.isScanningPsaDtc.collectAsState()
+    val batteryHealth by viewModel.batteryHealth.collectAsState()
     val psaConsoleLog by viewModel.psaConsoleLog.collectAsState()
 
     val liveTrip by viewModel.liveTrip.collectAsState()
@@ -153,13 +157,13 @@ fun MainAppContent(viewModel: MainViewModel) {
             TopAppBar(
                 title = {
                     when {
-                        showPeugeotLabModal -> {
+                        showBatteryModal -> {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { showPeugeotLabModal = false }) {
+                                IconButton(onClick = { showBatteryModal = false }) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = "Voltar", tint = TextPrimary)
                                 }
                                 Text(
-                                    text = "Laboratório 508",
+                                    text = "Saúde da Bateria 12V",
                                     color = TextPrimary,
                                     fontSize = 17.sp,
                                     fontWeight = FontWeight.Bold
@@ -172,7 +176,20 @@ fun MainAppContent(viewModel: MainViewModel) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = "Voltar", tint = TextPrimary)
                                 }
                                 Text(
-                                    text = "Diagnóstico DTC",
+                                    text = "Diagnóstico BSI & PSA",
+                                    color = TextPrimary,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        showPeugeotLabModal -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { showPeugeotLabModal = false }) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "Voltar", tint = TextPrimary)
+                                }
+                                Text(
+                                    text = "Laboratório 508",
                                     color = TextPrimary,
                                     fontSize = 17.sp,
                                     fontWeight = FontWeight.Bold
@@ -248,7 +265,7 @@ fun MainAppContent(viewModel: MainViewModel) {
             )
         },
         bottomBar = {
-            if (!showPeugeotLabModal && !showDiagnosticsModal) {
+            if (!showPeugeotLabModal && !showDiagnosticsModal && !showBatteryModal) {
                 NavigationBar(
                     containerColor = DarkSurface,
                     tonalElevation = 0.dp
@@ -307,20 +324,28 @@ fun MainAppContent(viewModel: MainViewModel) {
                 .padding(innerPadding)
         ) {
             when {
-                showPeugeotLabModal -> {
-                    PeugeotLabScreen(
-                        consoleLogs = psaConsoleLog,
-                        onTestSport = { viewModel.testPsaSport() },
-                        onTestCopper = { viewModel.testPsaCopper() },
-                        onSendRawCommand = { viewModel.sendRawCommand(it) }
+                showBatteryModal -> {
+                    BatteryHealthScreen(
+                        batteryHealth = batteryHealth,
+                        onResetCrankTest = { viewModel.resetCrankTest() }
                     )
                 }
                 showDiagnosticsModal -> {
                     DiagnosticScreen(
                         codes = dtcCodes,
                         isScanning = isScanningDtc,
+                        isScanningPsa = isScanningPsaDtc,
                         onScan = { viewModel.scanDtc() },
+                        onScanPsa = { viewModel.scanAdvancedPsaDtc() },
                         onClear = { viewModel.clearDtc() }
+                    )
+                }
+                showPeugeotLabModal -> {
+                    PeugeotLabScreen(
+                        consoleLogs = psaConsoleLog,
+                        onTestSport = { viewModel.testPsaSport() },
+                        onTestCopper = { viewModel.testPsaCopper() },
+                        onSendRawCommand = { viewModel.sendRawCommand(it) }
                     )
                 }
                 else -> {
@@ -356,6 +381,7 @@ fun MainAppContent(viewModel: MainViewModel) {
                             statusMessage = updateStatusMessage,
                             onCheckUpdate = { viewModel.checkForUpdates() },
                             onDownloadAndInstall = { viewModel.downloadAndInstallUpdate(it) },
+                            onOpenBatteryHealth = { showBatteryModal = true },
                             onOpenDiagnostics = { showDiagnosticsModal = true },
                             onOpenPeugeotLab = { showPeugeotLabModal = true }
                         )
