@@ -14,8 +14,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -174,7 +174,7 @@ fun PeugeotLabScreen(
                 },
                 modifier = Modifier.padding(start = 6.dp)
             ) {
-                Icon(Icons.Default.Send, contentDescription = null, tint = NeonCyan)
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = NeonCyan)
             }
         }
 

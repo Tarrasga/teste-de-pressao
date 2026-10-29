@@ -2,10 +2,20 @@ package com.testedepressao.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val CarbonBlack = Color(0xFF101114)
-val DarkSurface = Color(0xFF181A20)
-val DarkSurfaceElevated = Color(0xFF22252D)
-val DarkBorder = Color(0xFF2E323D)
+// Pure Pitch Black / AMOLED Theme
+val CarbonBlack = Color(0xFF000000)
+val DarkSurface = Color(0xFF090A0D)
+val DarkSurfaceElevated = Color(0xFF111317)
+val DarkBorder = Color(0xFF1C1E26)
+
+// Sports Gauge & Red Needle Colors
+val NeedleRed = Color(0xFFFF1E27)
+val NeedleRedGlow = Color(0x77FF1E27)
+val GaugeFaceBlack = Color(0xFF030304)
+val GaugeBezelOuter = Color(0xFF242730)
+val GaugeBezelInner = Color(0xFF121318)
+val GaugeTickWhite = Color(0xFFECEEF4)
+val GaugeRedZone = Color(0xFFFF1E27)
 
 // Neon & Accent Colors
 val NeonCyan = Color(0xFF00E5FF)

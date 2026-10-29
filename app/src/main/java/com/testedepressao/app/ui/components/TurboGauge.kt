@@ -1,29 +1,44 @@
 package com.testedepressao.app.ui.components
 
+import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.testedepressao.app.ui.theme.CarbonBlack
 import com.testedepressao.app.ui.theme.DarkBorder
+import com.testedepressao.app.ui.theme.GaugeBezelInner
+import com.testedepressao.app.ui.theme.GaugeBezelOuter
+import com.testedepressao.app.ui.theme.GaugeFaceBlack
+import com.testedepressao.app.ui.theme.GaugeRedZone
+import com.testedepressao.app.ui.theme.GaugeTickWhite
+import com.testedepressao.app.ui.theme.NeedleRed
+import com.testedepressao.app.ui.theme.NeedleRedGlow
 import com.testedepressao.app.ui.theme.NeonCyan
 import com.testedepressao.app.ui.theme.RaceRed
 import com.testedepressao.app.ui.theme.TextPrimary
@@ -44,149 +59,313 @@ fun TurboGauge(
     val maxVal = 3.0f
     val totalSpan = maxVal - minVal
 
+    // Fast and responsive needle sweep
     val animatedBoost by animateFloatAsState(
         targetValue = boostBar.coerceIn(minVal, maxVal),
-        animationSpec = tween(durationMillis = 80),
-        label = "boost_needle"
+        animationSpec = tween(durationMillis = 75),
+        label = "turbo_needle"
     )
 
-    val startAngle = 140f
-    val sweepTotal = 260f
+    val startAngle = 135f
+    val sweepTotal = 270f
 
-    // Calculate angles
     val currentRatio = ((animatedBoost - minVal) / totalSpan).coerceIn(0f, 1f)
-    val activeSweep = currentRatio * sweepTotal
+    val needleAngleDeg = startAngle + (currentRatio * sweepTotal)
+    val needleAngleRad = needleAngleDeg * (PI / 180f).toFloat()
 
     val peakRatio = ((peakBoostBar.coerceIn(minVal, maxVal) - minVal) / totalSpan).coerceIn(0f, 1f)
     val peakAngleDeg = startAngle + (peakRatio * sweepTotal)
 
+    val density = LocalDensity.current
+
+    val tickTextPaint = remember(density) {
+        Paint().apply {
+            color = android.graphics.Color.argb(220, 235, 238, 245)
+            textSize = with(density) { 11.sp.toPx() }
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+    }
+
+    val redZoneTextPaint = remember(density) {
+        Paint().apply {
+            color = android.graphics.Color.argb(240, 255, 30, 39)
+            textSize = with(density) { 11.sp.toPx() }
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+    }
+
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
-            val radius = (size.minDimension / 2f) - 24.dp.toPx()
-            val strokeWidth = 18.dp.toPx()
+            val outerRadius = (size.minDimension / 2f) - 6.dp.toPx()
+            val dialRadius = outerRadius - 14.dp.toPx()
 
-            // 1. Background Track Arc
-            drawArc(
+            // 1. Outer Metallic Bezel Ring
+            drawCircle(
+                color = GaugeBezelOuter,
+                radius = outerRadius,
+                center = center
+            )
+            drawCircle(
+                color = GaugeBezelInner,
+                radius = outerRadius - 4.dp.toPx(),
+                center = center
+            )
+
+            // 2. Pure Black Dial Face
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(GaugeFaceBlack, CarbonBlack),
+                    center = center,
+                    radius = dialRadius
+                ),
+                radius = dialRadius,
+                center = center
+            )
+
+            // Outer dial perimeter hairline
+            drawCircle(
                 color = DarkBorder,
+                radius = dialRadius,
+                center = center,
+                style = Stroke(width = 1.5f.dp.toPx())
+            )
+
+            // 3. Dial Track Arc
+            val arcRadius = dialRadius - 10.dp.toPx()
+            val arcStroke = 4.dp.toPx()
+
+            drawArc(
+                color = DarkBorder.copy(alpha = 0.5f),
                 startAngle = startAngle,
                 sweepAngle = sweepTotal,
                 useCenter = false,
-                topLeft = Offset(center.x - radius, center.y - radius),
-                size = Size(radius * 2, radius * 2),
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                topLeft = Offset(center.x - arcRadius, center.y - arcRadius),
+                size = Size(arcRadius * 2, arcRadius * 2),
+                style = Stroke(width = arcStroke, cap = StrokeCap.Round)
             )
 
-            // 2. Active Gradient Boost Arc
-            if (activeSweep > 0f) {
-                val gradient = Brush.sweepGradient(
-                    0.0f to NeonCyan,
-                    0.65f to NeonCyan,
-                    0.85f to RaceRed,
-                    1.0f to RaceRed,
-                    center = center
-                )
+            // Redline / Overboost warning arc (from +1.5 Bar to +3.0 Bar)
+            val redZoneStartRatio = (1.5f - minVal) / totalSpan
+            val redZoneStartAngle = startAngle + (redZoneStartRatio * sweepTotal)
+            val redZoneSweep = (1f - redZoneStartRatio) * sweepTotal
 
-                drawArc(
-                    brush = gradient,
-                    startAngle = startAngle,
-                    sweepAngle = activeSweep,
-                    useCenter = false,
-                    topLeft = Offset(center.x - radius, center.y - radius),
-                    size = Size(radius * 2, radius * 2),
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-                )
-            }
+            drawArc(
+                color = GaugeRedZone,
+                startAngle = redZoneStartAngle,
+                sweepAngle = redZoneSweep,
+                useCenter = false,
+                topLeft = Offset(center.x - arcRadius, center.y - arcRadius),
+                size = Size(arcRadius * 2, arcRadius * 2),
+                style = Stroke(width = arcStroke + 2.dp.toPx(), cap = StrokeCap.Round)
+            )
 
-            // 3. Ticks marks for -1, 0, 1, 2, 3 Bar
-            for (i in 0..8) {
-                val stepVal = minVal + (i * 0.5f)
-                val stepRatio = (stepVal - minVal) / totalSpan
-                val angleDeg = startAngle + (stepRatio * sweepTotal)
-                val angleRad = angleDeg * (PI / 180f).toFloat()
+            // 4. Dial Graduation Ticks & Numeric Labels
+            // 16 intervals: from -1.0 to 3.0 in 0.25 bar increments
+            val totalTicks = 16
+            for (i in 0..totalTicks) {
+                val tickVal = minVal + (i * 0.25f)
+                val tickRatio = (tickVal - minVal) / totalSpan
+                val tickAngleDeg = startAngle + (tickRatio * sweepTotal)
+                val tickAngleRad = tickAngleDeg * (PI / 180f).toFloat()
 
-                val isMajor = i % 2 == 0
-                val tickLen = if (isMajor) 14.dp.toPx() else 8.dp.toPx()
-                val tickInnerR = radius - (strokeWidth / 2f) - 6.dp.toPx()
-                val tickOuterR = tickInnerR - tickLen
+                val isMajor = i % 4 == 0       // -1, 0, 1, 2, 3
+                val isSemiMajor = i % 2 == 0   // -0.5, 0.5, 1.5, 2.5
+                val isRedZone = tickVal >= 1.5f
+
+                val tickLen = when {
+                    isMajor -> 14.dp.toPx()
+                    isSemiMajor -> 9.dp.toPx()
+                    else -> 5.dp.toPx()
+                }
+
+                val tickOuterR = dialRadius - 8.dp.toPx()
+                val tickInnerR = tickOuterR - tickLen
 
                 val p1 = Offset(
-                    center.x + tickInnerR * cos(angleRad),
-                    center.y + tickInnerR * sin(angleRad)
+                    center.x + tickOuterR * cos(tickAngleRad),
+                    center.y + tickOuterR * sin(tickAngleRad)
                 )
                 val p2 = Offset(
-                    center.x + tickOuterR * cos(angleRad),
-                    center.y + tickOuterR * sin(angleRad)
+                    center.x + tickInnerR * cos(tickAngleRad),
+                    center.y + tickInnerR * sin(tickAngleRad)
                 )
 
-                val tickColor = if (stepVal >= 1.5f) RaceRed else TextSecondary
+                val tickColor = when {
+                    isRedZone -> GaugeRedZone
+                    isMajor -> GaugeTickWhite
+                    else -> TextSecondary.copy(alpha = 0.6f)
+                }
+
+                val tickStrokeWidth = when {
+                    isMajor -> 2.5f.dp.toPx()
+                    isSemiMajor -> 1.5f.dp.toPx()
+                    else -> 1.dp.toPx()
+                }
+
                 drawLine(
                     color = tickColor,
                     start = p1,
                     end = p2,
-                    strokeWidth = if (isMajor) 3.dp.toPx() else 1.5f.dp.toPx(),
+                    strokeWidth = tickStrokeWidth,
                     cap = StrokeCap.Round
                 )
+
+                // Numerical text labels for major numbers: -1, 0, 1, 2, 3
+                if (isMajor) {
+                    val labelR = tickInnerR - 12.dp.toPx()
+                    val labelX = center.x + labelR * cos(tickAngleRad)
+                    val labelY = center.y + labelR * sin(tickAngleRad) + 4.dp.toPx()
+
+                    val text = when (tickVal.toInt()) {
+                        -1 -> "-1"
+                        0 -> "0"
+                        1 -> "1"
+                        2 -> "2"
+                        3 -> "3"
+                        else -> "${tickVal.toInt()}"
+                    }
+
+                    drawContext.canvas.nativeCanvas.drawText(
+                        text,
+                        labelX,
+                        labelY,
+                        if (isRedZone) redZoneTextPaint else tickTextPaint
+                    )
+                }
             }
 
-            // 4. Peak Boost Bug Marker
+            // 5. Peak Hold Marker Bug (Red tick holding maximum recorded boost)
             if (peakBoostBar > 0f) {
                 val peakRad = peakAngleDeg * (PI / 180f).toFloat()
-                val markerInnerR = radius - (strokeWidth / 2f) - 4.dp.toPx()
-                val markerOuterR = radius + (strokeWidth / 2f) + 4.dp.toPx()
+                val markerOuterR = dialRadius - 6.dp.toPx()
+                val markerInnerR = markerOuterR - 16.dp.toPx()
 
                 drawLine(
                     color = RaceRed,
                     start = Offset(center.x + markerInnerR * cos(peakRad), center.y + markerInnerR * sin(peakRad)),
                     end = Offset(center.x + markerOuterR * cos(peakRad), center.y + markerOuterR * sin(peakRad)),
-                    strokeWidth = 4.dp.toPx(),
+                    strokeWidth = 3.5f.dp.toPx(),
                     cap = StrokeCap.Round
                 )
             }
 
-            // 5. Center Dial Accent
+            // 6. RED NEEDLE (PONTEIRO VERMELHO)
+            val needleLength = dialRadius - 16.dp.toPx()
+            val tailLength = 22.dp.toPx()
+            val needleBaseHalfWidth = 4.5f.dp.toPx()
+            val tailHalfWidth = 3.5f.dp.toPx()
+
+            val tipX = center.x + needleLength * cos(needleAngleRad)
+            val tipY = center.y + needleLength * sin(needleAngleRad)
+
+            val tailRad = needleAngleRad + PI.toFloat()
+            val tailX = center.x + tailLength * cos(tailRad)
+            val tailY = center.y + tailLength * sin(tailRad)
+
+            val perpRad = needleAngleRad + (PI / 2f).toFloat()
+            val base1X = center.x + needleBaseHalfWidth * cos(perpRad)
+            val base1Y = center.y + needleBaseHalfWidth * sin(perpRad)
+            val base2X = center.x - needleBaseHalfWidth * cos(perpRad)
+            val base2Y = center.y - needleBaseHalfWidth * sin(perpRad)
+
+            val tail1X = tailX + tailHalfWidth * cos(perpRad)
+            val tail1Y = tailY + tailHalfWidth * sin(perpRad)
+            val tail2X = tailX - tailHalfWidth * cos(perpRad)
+            val tail2Y = tailY - tailHalfWidth * sin(perpRad)
+
+            val needlePath = Path().apply {
+                moveTo(tipX, tipY)
+                lineTo(base1X, base1Y)
+                lineTo(tail1X, tail1Y)
+                lineTo(tail2X, tail2Y)
+                lineTo(base2X, base2Y)
+                close()
+            }
+
+            // 6a. Luminous Red Optical Glow Behind Needle
+            drawPath(
+                path = needlePath,
+                color = NeedleRedGlow,
+                style = Stroke(width = 6.dp.toPx())
+            )
+
+            // 6b. Red Needle Body
+            drawPath(
+                path = needlePath,
+                color = NeedleRed
+            )
+
+            // 6c. Needle Center Spine Highlight (3D optical facet)
+            drawLine(
+                color = Color(0xFFFFB3BA),
+                start = Offset(center.x, center.y),
+                end = Offset(tipX, tipY),
+                strokeWidth = 1.2f.dp.toPx(),
+                cap = StrokeCap.Round
+            )
+
+            // 7. Center Hub / Pivot Cap
+            val hubRadius = 18.dp.toPx()
             drawCircle(
-                color = CarbonBlack,
-                radius = radius * 0.55f,
+                color = Color(0xFF0F1014),
+                radius = hubRadius,
                 center = center
             )
             drawCircle(
-                color = if (animatedBoost >= 1.5f) RaceRed.copy(alpha = 0.4f) else NeonCyan.copy(alpha = 0.25f),
-                radius = radius * 0.55f,
+                color = NeedleRed,
+                radius = hubRadius,
                 center = center,
                 style = Stroke(width = 2.dp.toPx())
             )
+            drawCircle(
+                color = Color(0xFF282B35),
+                radius = 6.dp.toPx(),
+                center = center
+            )
+            drawCircle(
+                color = NeedleRed,
+                radius = 2.5f.dp.toPx(),
+                center = center
+            )
         }
 
-        // Center Digital Display
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Center / Lower Digital Display (Integrated with dial)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.offset(y = 48.dp)
+        ) {
             val boostText = String.format(Locale.US, "%+.2f", animatedBoost)
-            val isPositive = animatedBoost >= 0f
+            val isOverboost = animatedBoost >= 1.5f
 
             Text(
                 text = "TURBO BOOST",
                 color = TextSecondary,
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.2.sp
             )
             Text(
                 text = boostText,
-                color = if (animatedBoost >= 1.5f) RaceRed else if (isPositive) NeonCyan else TextPrimary,
-                fontSize = 44.sp,
+                color = if (isOverboost) NeedleRed else TextPrimary,
+                fontSize = 32.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.Monospace
             )
             Text(
                 text = "BAR",
-                color = TextSecondary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
+                color = if (isOverboost) NeedleRed else TextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
             )
             Text(
                 text = "PICO: ${String.format(Locale.US, "%.2f", peakBoostBar)} BAR",
-                color = if (peakBoostBar >= 1.5f) RaceRed else TextSecondary,
-                fontSize = 11.sp,
+                color = if (peakBoostBar >= 1.5f) NeedleRed else TextSecondary,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold
             )
         }
