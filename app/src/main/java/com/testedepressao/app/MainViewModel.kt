@@ -37,6 +37,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val connectedDeviceName = bluetoothManager.connectedDeviceName
 
     val keepScreenOn = settingsPreferences.keepScreenOn
+    val gaugeScale = settingsPreferences.gaugeScale
     val updateInfo = updateManager.updateInfo
     val isCheckingUpdate = updateManager.isChecking
     val isDownloadingUpdate = updateManager.isDownloading
@@ -98,6 +99,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setKeepScreenOn(enabled: Boolean) {
         settingsPreferences.setKeepScreenOn(enabled)
+    }
+
+    fun setGaugeScale(scale: Float) {
+        settingsPreferences.setGaugeScale(scale)
+    }
+
+    fun cycleGaugeScale() {
+        val current = gaugeScale.value
+        val next = when {
+            current >= 0.95f -> 0.70f  // 100% -> 70%
+            current < 0.78f -> 0.85f   // 70% -> 85%
+            else -> 1.0f               // 85% -> 100%
+        }
+        setGaugeScale(next)
     }
 
     fun toggleSensor(sensorId: String, isEnabled: Boolean) {

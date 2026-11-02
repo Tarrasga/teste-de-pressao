@@ -14,6 +14,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.BatteryAlert
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Download
@@ -44,6 +47,7 @@ import com.testedepressao.app.ui.theme.CarbonBlack
 import com.testedepressao.app.ui.theme.DarkBorder
 import com.testedepressao.app.ui.theme.DarkSurface
 import com.testedepressao.app.ui.theme.DarkSurfaceElevated
+import com.testedepressao.app.ui.theme.NeedleRed
 import com.testedepressao.app.ui.theme.NeonCyan
 import com.testedepressao.app.ui.theme.PeugeotCopper
 import com.testedepressao.app.ui.theme.SuccessGreen
@@ -55,6 +59,8 @@ import com.testedepressao.app.ui.theme.WarningAmber
 fun SettingsScreen(
     keepScreenOn: Boolean,
     onKeepScreenOnToggle: (Boolean) -> Unit,
+    gaugeScale: Float = 1.0f,
+    onSetGaugeScale: (Float) -> Unit = {},
     sensors: List<SensorItem>,
     onToggleSensor: (String, Boolean) -> Unit,
     currentVersion: String,
@@ -129,6 +135,66 @@ fun SettingsScreen(
                         uncheckedTrackColor = DarkSurfaceElevated
                     )
                 )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Gauge Size (Escala dos Manómetros para Tablets e Telemóveis)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(DarkSurface)
+                    .border(1.dp, DarkBorder, RoundedCornerShape(12.dp))
+                    .padding(14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AspectRatio, contentDescription = null, tint = NeedleRed)
+                    Spacer(modifier = Modifier.padding(start = 10.dp))
+                    Column {
+                        Text(
+                            text = "Tamanho dos Manómetros (Tablet / Ecrã)",
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Ajusta a escala dos mostradores analógicos no ecrã e tablet.",
+                            color = TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val isSmall = gaugeScale < 0.78f
+                    val isMedium = gaugeScale in 0.78f..0.92f
+                    val isLarge = gaugeScale > 0.92f
+
+                    GaugeScalePill(
+                        title = "Compacto (70%)",
+                        isSelected = isSmall,
+                        onClick = { onSetGaugeScale(0.70f) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    GaugeScalePill(
+                        title = "Médio (85%)",
+                        isSelected = isMedium,
+                        onClick = { onSetGaugeScale(0.85f) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    GaugeScalePill(
+                        title = "Ecrã Cheio (100%)",
+                        isSelected = isLarge,
+                        onClick = { onSetGaugeScale(1.0f) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
 
@@ -378,5 +444,30 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun GaugeScalePill(
+    title: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isSelected) NeedleRed else DarkSurfaceElevated)
+            .border(1.dp, if (isSelected) NeedleRed else DarkBorder, RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = title,
+            color = if (isSelected) TextPrimary else TextSecondary,
+            fontSize = 11.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+        )
     }
 }

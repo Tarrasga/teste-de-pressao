@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
@@ -58,6 +60,8 @@ import com.testedepressao.app.ui.theme.WarningAmber
 fun LiveTelemetryScreen(
     telemetry: VehicleTelemetry,
     onResetPeak: () -> Unit,
+    gaugeScale: Float = 1.0f,
+    onCycleGaugeScale: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
@@ -67,12 +71,15 @@ fun LiveTelemetryScreen(
         LandscapeCockpitView(
             telemetry = telemetry,
             onResetPeak = onResetPeak,
+            gaugeScale = gaugeScale,
+            onCycleGaugeScale = onCycleGaugeScale,
             modifier = modifier
         )
     } else {
         PortraitCockpitView(
             telemetry = telemetry,
             onResetPeak = onResetPeak,
+            gaugeScale = gaugeScale,
             modifier = modifier
         )
     }
@@ -81,42 +88,51 @@ fun LiveTelemetryScreen(
 /**
  * Widescreen Dual Cockpit Dashboard (Horizontal / Landscape)
  * Side-by-side Turbo Gauge & RPM/Speed Gauge both with red illuminated needles.
+ * Automatically expands to fill tablet screens!
  */
 @Composable
 private fun LandscapeCockpitView(
     telemetry: VehicleTelemetry,
     onResetPeak: () -> Unit,
+    gaugeScale: Float,
+    onCycleGaugeScale: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
+    val scalePercentLabel = when {
+        gaugeScale >= 0.95f -> "Tam: 100%"
+        gaugeScale >= 0.80f -> "Tam: 85%"
+        else -> "Tam: 70%"
+    }
 
     Row(
         modifier = modifier
             .fillMaxSize()
             .background(CarbonBlack)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left Gauge: Turbo Boost with Red Needle
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.weight(1f)
+        // Left Gauge: Turbo Boost (fills available space up to gaugeScale)
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(4.dp),
+            contentAlignment = Alignment.Center
         ) {
             TurboGauge(
                 boostBar = telemetry.boostPressureBar,
                 peakBoostBar = telemetry.peakBoostBar,
-                modifier = Modifier.size(240.dp)
+                modifier = Modifier.fillMaxSize(gaugeScale)
             )
         }
 
-        // Center Quick Bar: Essential Engine Telemetry & Peak Reset
+        // Center Quick Bar: Essential Engine Telemetry, Peak Reset & Quick Size Selector
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
             modifier = Modifier
-                .width(130.dp)
+                .widthIn(min = 120.dp, max = 150.dp)
                 .fillMaxHeight()
                 .padding(vertical = 4.dp)
         ) {
@@ -137,7 +153,7 @@ private fun LandscapeCockpitView(
                 value = telemetry.batteryVoltage?.let { String.format("%.1fV", it) } ?: "--",
                 color = if ((telemetry.batteryVoltage ?: 14f) < 12.2f) WarningAmber else NeonCyan
             )
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             OutlinedButton(
                 onClick = onResetPeak,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
@@ -148,18 +164,32 @@ private fun LandscapeCockpitView(
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("Repor", fontSize = 10.sp)
             }
+            Spacer(modifier = Modifier.height(6.dp))
+            // Quick Gauge Size toggle (allows instant tablet / phone adjustment)
+            OutlinedButton(
+                onClick = onCycleGaugeScale,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = NeedleRed),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.height(32.dp)
+            ) {
+                Icon(Icons.Default.AspectRatio, contentDescription = null, modifier = Modifier.size(12.dp), tint = NeedleRed)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(scalePercentLabel, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            }
         }
 
         // Right Gauge: RPM / Speed with Red Needle (Tap to toggle)
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.weight(1f)
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(4.dp),
+            contentAlignment = Alignment.Center
         ) {
             SportCompanionGauge(
                 rpm = telemetry.rpm,
                 speedKmh = telemetry.speedKmh,
-                modifier = Modifier.size(240.dp),
+                modifier = Modifier.fillMaxSize(gaugeScale),
                 initialMode = CompanionGaugeMode.RPM
             )
         }
@@ -173,10 +203,16 @@ private fun LandscapeCockpitView(
 private fun PortraitCockpitView(
     telemetry: VehicleTelemetry,
     onResetPeak: () -> Unit,
+    gaugeScale: Float,
     modifier: Modifier = Modifier
 ) {
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp.dp
     val scrollState = rememberScrollState()
     var selectedGaugeTab by remember { mutableStateOf(0) } // 0: Turbo, 1: RPM/Speed
+
+    // Adaptive diameter for phone or tablet in portrait
+    val portraitGaugeSize = (minOf(screenWidthDp * 0.88f, 540.dp) * gaugeScale).coerceAtLeast(260.dp)
 
     Column(
         modifier = modifier
@@ -214,13 +250,13 @@ private fun PortraitCockpitView(
             TurboGauge(
                 boostBar = telemetry.boostPressureBar,
                 peakBoostBar = telemetry.peakBoostBar,
-                modifier = Modifier.size(280.dp)
+                modifier = Modifier.size(portraitGaugeSize)
             )
         } else {
             SportCompanionGauge(
                 rpm = telemetry.rpm,
                 speedKmh = telemetry.speedKmh,
-                modifier = Modifier.size(280.dp)
+                modifier = Modifier.size(portraitGaugeSize)
             )
         }
 

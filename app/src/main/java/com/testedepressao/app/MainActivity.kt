@@ -128,6 +128,7 @@ fun MainAppContent(viewModel: MainViewModel) {
     val connectedDeviceName by viewModel.connectedDeviceName.collectAsState()
     val isDemoMode by viewModel.isDemoMode.collectAsState()
     val keepScreenOn by viewModel.keepScreenOn.collectAsState()
+    val gaugeScale by viewModel.gaugeScale.collectAsState()
 
     val telemetry by viewModel.telemetry.collectAsState()
     val allSensors by viewModel.allSensors.collectAsState()
@@ -259,6 +260,7 @@ fun MainAppContent(viewModel: MainViewModel) {
                         liveTrip = liveTrip,
                         tripHistory = tripHistory,
                         keepScreenOn = keepScreenOn,
+                        gaugeScale = gaugeScale,
                         currentVersionName = viewModel.currentVersionName,
                         updateInfo = updateInfo,
                         isCheckingUpdate = isCheckingUpdate,
@@ -367,6 +369,7 @@ fun MainAppContent(viewModel: MainViewModel) {
                     liveTrip = liveTrip,
                     tripHistory = tripHistory,
                     keepScreenOn = keepScreenOn,
+                    gaugeScale = gaugeScale,
                     currentVersionName = viewModel.currentVersionName,
                     updateInfo = updateInfo,
                     isCheckingUpdate = isCheckingUpdate,
@@ -538,6 +541,7 @@ private fun ScreenSwitcher(
     liveTrip: com.testedepressao.app.data.models.LiveTripData,
     tripHistory: List<com.testedepressao.app.data.models.TripRecord>,
     keepScreenOn: Boolean,
+    gaugeScale: Float,
     currentVersionName: String,
     updateInfo: com.testedepressao.app.data.UpdateInfo,
     isCheckingUpdate: Boolean,
@@ -579,7 +583,9 @@ private fun ScreenSwitcher(
             when (selectedTab) {
                 0 -> LiveTelemetryScreen(
                     telemetry = telemetry,
-                    onResetPeak = { viewModel.resetPeakBoost() }
+                    onResetPeak = { viewModel.resetPeakBoost() },
+                    gaugeScale = gaugeScale,
+                    onCycleGaugeScale = { viewModel.cycleGaugeScale() }
                 )
                 1 -> TripComputerScreen(
                     liveTrip = liveTrip,
@@ -598,6 +604,8 @@ private fun ScreenSwitcher(
                 4 -> SettingsScreen(
                     keepScreenOn = keepScreenOn,
                     onKeepScreenOnToggle = { viewModel.setKeepScreenOn(it) },
+                    gaugeScale = gaugeScale,
+                    onSetGaugeScale = { viewModel.setGaugeScale(it) },
                     sensors = allSensors,
                     onToggleSensor = { id, enabled -> viewModel.toggleSensor(id, enabled) },
                     currentVersion = currentVersionName,

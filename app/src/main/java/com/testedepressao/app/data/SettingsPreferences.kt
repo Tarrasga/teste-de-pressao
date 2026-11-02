@@ -19,9 +19,17 @@ class SettingsPreferences(context: Context) {
     )
     val enabledSensors: StateFlow<Set<String>> = _enabledSensors.asStateFlow()
 
+    private val _gaugeScale = MutableStateFlow(prefs.getFloat(KEY_GAUGE_SCALE, 1.0f))
+    val gaugeScale: StateFlow<Float> = _gaugeScale.asStateFlow()
+
     fun setKeepScreenOn(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, enabled).apply()
         _keepScreenOn.value = enabled
+    }
+
+    fun setGaugeScale(scale: Float) {
+        prefs.edit().putFloat(KEY_GAUGE_SCALE, scale).apply()
+        _gaugeScale.value = scale
     }
 
     fun setSensorEnabled(sensorId: String, isEnabled: Boolean) {
@@ -38,6 +46,7 @@ class SettingsPreferences(context: Context) {
     companion object {
         private const val KEY_KEEP_SCREEN_ON = "pref_keep_screen_on"
         private const val KEY_ENABLED_SENSORS = "pref_enabled_sensors"
+        private const val KEY_GAUGE_SCALE = "pref_gauge_scale"
 
         val DEFAULT_SENSORS = setOf(
             "turbo",

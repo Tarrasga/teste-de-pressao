@@ -1,6 +1,6 @@
 {
-  "versionCode": 6,
-  "versionName": "1.4.0",
+  "versionCode": 7,
+  "versionName": "1.4.1",
   "apkUrl": "https://raw.githubusercontent.com/Tarrasga/teste-de-pressao/main/TesteDePressao.apk",
-  "releaseNotes": "Novo tema Fundo Preto AMOLED e manómetros de corrida com ponteiros vermelhos! Suporte completo para orientação Vertical e Horizontal (Cockpit Widescreen duplo no suporte do tablier)!"
+  "releaseNotes": "Manómetros dinâmicos e adaptativos para Tablets e ecrãs grandes (preenchimento total do ecrã) com novo seletor de tamanho/escala (Compacto, Médio e Ecrã Cheio 100%)!"
 }
