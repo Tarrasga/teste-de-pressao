@@ -47,6 +47,32 @@ class CarBluetoothManager(private val context: Context) {
         }
     }
 
+    fun findAutoConnectDevice(preferredMac: String?): BluetoothDevice? {
+        val devices = getBondedDevices()
+        if (devices.isEmpty()) return null
+
+        // 1. Try to match preferredMac if present
+        if (!preferredMac.isNullOrBlank()) {
+            val match = devices.firstOrNull { it.address.equals(preferredMac, ignoreCase = true) }
+            if (match != null) return match
+        }
+
+        // 2. Try common OBD keywords in device name
+        val obdKeywords = listOf("OBD", "ELM", "V-LINK", "VGATE", "KONNWEI", "VIESTAR", "CAR", "SCAN", "IOS-VLINK")
+        val keywordMatch = devices.firstOrNull { dev ->
+            val name = (dev.name ?: "").uppercase(java.util.Locale.US)
+            obdKeywords.any { kw -> name.contains(kw) }
+        }
+        if (keywordMatch != null) return keywordMatch
+
+        // 3. Fallback: if there is only 1 bonded device, try it
+        if (devices.size == 1) {
+            return devices.first()
+        }
+
+        return null
+    }
+
     suspend fun connect(device: BluetoothDevice): Boolean = withContext(Dispatchers.IO) {
         _connectionStatus.value = ConnectionStatus.CONNECTING
         disconnect()

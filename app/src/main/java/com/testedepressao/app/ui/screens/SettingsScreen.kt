@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.BatteryAlert
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -61,6 +62,9 @@ fun SettingsScreen(
     onKeepScreenOnToggle: (Boolean) -> Unit,
     gaugeScale: Float = 1.0f,
     onSetGaugeScale: (Float) -> Unit = {},
+    autoConnectObd: Boolean = true,
+    onAutoConnectObdToggle: (Boolean) -> Unit = {},
+    lastObdName: String = "",
     sensors: List<SensorItem>,
     onToggleSensor: (String, Boolean) -> Unit,
     currentVersion: String,
@@ -193,6 +197,76 @@ fun SettingsScreen(
                         isSelected = isLarge,
                         onClick = { onSetGaugeScale(1.0f) },
                         modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        // --- 1b. Conexão Bluetooth OBD2 Automática ---
+        item {
+            Text(
+                text = "LIGAÇÃO OBD2 AUTOMÁTICA",
+                color = TextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(DarkSurface)
+                    .border(1.dp, DarkBorder, RoundedCornerShape(12.dp))
+                    .padding(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.DirectionsCar, contentDescription = null, tint = SuccessGreen)
+                        Spacer(modifier = Modifier.padding(start = 10.dp))
+                        Column {
+                            Text(
+                                text = "Ligar Sozinho ao OBD2",
+                                color = TextPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Conecta-se ao carro sem ter de carregar em nada ao abrir a app ou ligar a chave.",
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                        }
+                    }
+
+                    Switch(
+                        checked = autoConnectObd,
+                        onCheckedChange = onAutoConnectObdToggle,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = SuccessGreen,
+                            checkedTrackColor = SuccessGreen.copy(alpha = 0.3f),
+                            uncheckedThumbColor = TextSecondary,
+                            uncheckedTrackColor = DarkSurfaceElevated
+                        )
+                    )
+                }
+
+                if (lastObdName.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Dispositivo memorizado: $lastObdName",
+                        color = NeonCyan,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }

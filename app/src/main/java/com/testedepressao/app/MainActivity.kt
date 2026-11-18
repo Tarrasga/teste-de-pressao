@@ -95,8 +95,10 @@ class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ ->
-        // Handled reactively
+    ) { grants ->
+        if (grants.values.any { it }) {
+            viewModel.triggerAutoConnect()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -141,6 +143,8 @@ fun MainAppContent(viewModel: MainViewModel) {
     val isDemoMode by viewModel.isDemoMode.collectAsState()
     val keepScreenOn by viewModel.keepScreenOn.collectAsState()
     val gaugeScale by viewModel.gaugeScale.collectAsState()
+    val autoConnectObd by viewModel.autoConnectObd.collectAsState()
+    val lastObdName by viewModel.lastObdName.collectAsState()
 
     val telemetry by viewModel.telemetry.collectAsState()
     val allSensors by viewModel.allSensors.collectAsState()
@@ -273,6 +277,9 @@ fun MainAppContent(viewModel: MainViewModel) {
                         tripHistory = tripHistory,
                         keepScreenOn = keepScreenOn,
                         gaugeScale = gaugeScale,
+                        autoConnectObd = autoConnectObd,
+                        lastObdName = lastObdName,
+                        onAutoConnectObdToggle = { viewModel.setAutoConnectObd(it) },
                         currentVersionName = viewModel.currentVersionName,
                         updateInfo = updateInfo,
                         isCheckingUpdate = isCheckingUpdate,
@@ -382,6 +389,9 @@ fun MainAppContent(viewModel: MainViewModel) {
                     tripHistory = tripHistory,
                     keepScreenOn = keepScreenOn,
                     gaugeScale = gaugeScale,
+                    autoConnectObd = autoConnectObd,
+                    lastObdName = lastObdName,
+                    onAutoConnectObdToggle = { viewModel.setAutoConnectObd(it) },
                     currentVersionName = viewModel.currentVersionName,
                     updateInfo = updateInfo,
                     isCheckingUpdate = isCheckingUpdate,
@@ -655,6 +665,9 @@ private fun ScreenSwitcher(
     tripHistory: List<com.testedepressao.app.data.models.TripRecord>,
     keepScreenOn: Boolean,
     gaugeScale: Float,
+    autoConnectObd: Boolean,
+    lastObdName: String,
+    onAutoConnectObdToggle: (Boolean) -> Unit,
     currentVersionName: String,
     updateInfo: com.testedepressao.app.data.UpdateInfo,
     isCheckingUpdate: Boolean,
@@ -724,6 +737,9 @@ private fun ScreenSwitcher(
                     onKeepScreenOnToggle = { viewModel.setKeepScreenOn(it) },
                     gaugeScale = gaugeScale,
                     onSetGaugeScale = { viewModel.setGaugeScale(it) },
+                    autoConnectObd = autoConnectObd,
+                    onAutoConnectObdToggle = onAutoConnectObdToggle,
+                    lastObdName = lastObdName,
                     sensors = allSensors,
                     onToggleSensor = { id, enabled -> viewModel.toggleSensor(id, enabled) },
                     currentVersion = currentVersionName,

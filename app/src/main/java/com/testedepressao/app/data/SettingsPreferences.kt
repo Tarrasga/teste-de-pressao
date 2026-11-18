@@ -22,6 +22,15 @@ class SettingsPreferences(context: Context) {
     private val _gaugeScale = MutableStateFlow(prefs.getFloat(KEY_GAUGE_SCALE, 1.0f))
     val gaugeScale: StateFlow<Float> = _gaugeScale.asStateFlow()
 
+    private val _autoConnectObd = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CONNECT_OBD, true))
+    val autoConnectObd: StateFlow<Boolean> = _autoConnectObd.asStateFlow()
+
+    private val _lastObdMac = MutableStateFlow(prefs.getString(KEY_LAST_OBD_MAC, "") ?: "")
+    val lastObdMac: StateFlow<String> = _lastObdMac.asStateFlow()
+
+    private val _lastObdName = MutableStateFlow(prefs.getString(KEY_LAST_OBD_NAME, "") ?: "")
+    val lastObdName: StateFlow<String> = _lastObdName.asStateFlow()
+
     fun setKeepScreenOn(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, enabled).apply()
         _keepScreenOn.value = enabled
@@ -30,6 +39,20 @@ class SettingsPreferences(context: Context) {
     fun setGaugeScale(scale: Float) {
         prefs.edit().putFloat(KEY_GAUGE_SCALE, scale).apply()
         _gaugeScale.value = scale
+    }
+
+    fun setAutoConnectObd(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_CONNECT_OBD, enabled).apply()
+        _autoConnectObd.value = enabled
+    }
+
+    fun setLastObdDevice(mac: String, name: String?) {
+        prefs.edit()
+            .putString(KEY_LAST_OBD_MAC, mac)
+            .putString(KEY_LAST_OBD_NAME, name ?: "")
+            .apply()
+        _lastObdMac.value = mac
+        _lastObdName.value = name ?: ""
     }
 
     fun setSensorEnabled(sensorId: String, isEnabled: Boolean) {
@@ -47,6 +70,9 @@ class SettingsPreferences(context: Context) {
         private const val KEY_KEEP_SCREEN_ON = "pref_keep_screen_on"
         private const val KEY_ENABLED_SENSORS = "pref_enabled_sensors"
         private const val KEY_GAUGE_SCALE = "pref_gauge_scale"
+        private const val KEY_AUTO_CONNECT_OBD = "pref_auto_connect_obd"
+        private const val KEY_LAST_OBD_MAC = "pref_last_obd_mac"
+        private const val KEY_LAST_OBD_NAME = "pref_last_obd_name"
 
         val DEFAULT_SENSORS = setOf(
             "turbo",

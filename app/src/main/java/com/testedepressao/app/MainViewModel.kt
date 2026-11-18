@@ -9,7 +9,9 @@ import com.testedepressao.app.data.ObdManager
 import com.testedepressao.app.data.SettingsPreferences
 import com.testedepressao.app.data.TripManager
 import com.testedepressao.app.data.UpdateManager
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -38,6 +40,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val keepScreenOn = settingsPreferences.keepScreenOn
     val gaugeScale = settingsPreferences.gaugeScale
+    val autoConnectObd = settingsPreferences.autoConnectObd
+    val lastObdName = settingsPreferences.lastObdName
+
+    private var userDisconnectedManually = false
+
     val updateInfo = updateManager.updateInfo
     val isCheckingUpdate = updateManager.isChecking
     val isDownloadingUpdate = updateManager.isDownloading
@@ -83,19 +90,73 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+
+        // Automatic OBD Connection & Reconnect Loop
+        viewModelScope.launch {
+            delay(1200) // Initial delay for Bluetooth adapter & permissions to settle
+            while (isActive) {
+                if (settingsPreferences.autoConnectObd.value &&
+                    !obdManager.isDemoMode.value &&
+                    !userDisconnectedManually &&
+                    (bluetoothManager.connectionStatus.value == com.testedepressao.app.data.models.ConnectionStatus.DISCONNECTED ||
+                        bluetoothManager.connectionStatus.value == com.testedepressao.app.data.models.ConnectionStatus.ERROR)
+                ) {
+                    val adapter = bluetoothManager.bluetoothAdapter
+                    if (adapter != null && adapter.isEnabled) {
+                        val target = bluetoothManager.findAutoConnectDevice(settingsPreferences.lastObdMac.value)
+                        if (target != null) {
+                            val success = bluetoothManager.connect(target)
+                            if (success) {
+                                settingsPreferences.setLastObdDevice(target.address, target.name)
+                            }
+                        }
+                    }
+                }
+                delay(6000)
+            }
+        }
     }
 
     fun getBondedDevices(): List<BluetoothDevice> {
         return bluetoothManager.getBondedDevices()
     }
 
-    fun connectDevice(device: BluetoothDevice) {
+    fun triggerAutoConnect() {
+        userDisconnectedManually = false
         viewModelScope.launch {
-            bluetoothManager.connect(device)
+            if (bluetoothManager.connectionStatus.value == com.testedepressao.app.data.models.ConnectionStatus.DISCONNECTED ||
+                bluetoothManager.connectionStatus.value == com.testedepressao.app.data.models.ConnectionStatus.ERROR
+            ) {
+                val target = bluetoothManager.findAutoConnectDevice(settingsPreferences.lastObdMac.value)
+                if (target != null) {
+                    val success = bluetoothManager.connect(target)
+                    if (success) {
+                        settingsPreferences.setLastObdDevice(target.address, target.name)
+                    }
+                }
+            }
+        }
+    }
+
+    fun setAutoConnectObd(enabled: Boolean) {
+        settingsPreferences.setAutoConnectObd(enabled)
+        if (enabled) {
+            triggerAutoConnect()
+        }
+    }
+
+    fun connectDevice(device: BluetoothDevice) {
+        userDisconnectedManually = false
+        viewModelScope.launch {
+            val success = bluetoothManager.connect(device)
+            if (success) {
+                settingsPreferences.setLastObdDevice(device.address, device.name)
+            }
         }
     }
 
     fun disconnect() {
+        userDisconnectedManually = true
         bluetoothManager.disconnect()
     }
 

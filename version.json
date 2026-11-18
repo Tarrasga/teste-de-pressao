@@ -1,6 +1,6 @@
 {
-  "versionCode": 8,
-  "versionName": "1.5.0",
+  "versionCode": 9,
+  "versionName": "1.6.0",
   "apkUrl": "https://raw.githubusercontent.com/Tarrasga/teste-de-pressao/main/TesteDePressao.apk",
-  "releaseNotes": "• Registo e fixação da Velocidade Máxima atingida com marcador no manómetro desportivo.\n• Início automático de viagens ao ligar o motor ou conectar o OBD2, com salvamento automático ao parar/desconectar.\n• Monitorização do Odómetro Total (km da viatura) e Tempo de Motor Ligado.\n• Verificação automática de novas versões ao abrir a aplicação com alerta detalhado do que há de novo.\n• Botão de reposição unificada dos picos de turbo e velocidade."
+  "releaseNotes": "• Ligação Automática ao OBD2: a aplicação conecta-se agora sozinha ao adaptador OBD ao abrir ou quando liga o carro, sem precisar de tocar em nada.\n• Reconexão inteligente contínua se o sinal for interrompido.\n• Memorização do leitor OBD e novo interruptor nas Definições.\n• Gravação de velocidade máxima, viagens automáticas e odómetro."
 }
