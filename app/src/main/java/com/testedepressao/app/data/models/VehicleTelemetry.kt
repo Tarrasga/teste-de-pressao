@@ -5,6 +5,7 @@ data class VehicleTelemetry(
     val peakBoostBar: Float = 0.0f,
     val rpm: Int = 0,
     val speedKmh: Int = 0,
+    val peakSpeedKmh: Int = 0,
     val coolantTempC: Int = 0,
     val oilTempC: Int? = null,
     val batteryVoltage: Float? = null,
@@ -14,9 +15,23 @@ data class VehicleTelemetry(
     val mafGramsPerSec: Float? = null,
     val fuelLevelPercent: Int? = null,
     val engineRunTimeSec: Int? = null,
+    val totalOdometerKm: Int? = null,
     val intakePressureKpa: Int = 101,
     val barometricPressureKpa: Int = 101
-)
+) {
+    val engineRunTimeFormatted: String?
+        get() {
+            val sec = engineRunTimeSec ?: return null
+            val h = sec / 3600
+            val m = (sec % 3600) / 60
+            val s = sec % 60
+            return if (h > 0) {
+                String.format(java.util.Locale.US, "%02d:%02d:%02d", h, m, s)
+            } else {
+                String.format(java.util.Locale.US, "%02d:%02d", m, s)
+            }
+        }
+}
 
 data class AccelerationRun(
     val timeSeconds: Float,

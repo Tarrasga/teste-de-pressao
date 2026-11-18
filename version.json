@@ -1,6 +1,6 @@
 {
-  "versionCode": 7,
-  "versionName": "1.4.1",
+  "versionCode": 8,
+  "versionName": "1.5.0",
   "apkUrl": "https://raw.githubusercontent.com/Tarrasga/teste-de-pressao/main/TesteDePressao.apk",
-  "releaseNotes": "Manómetros dinâmicos e adaptativos para Tablets e ecrãs grandes (preenchimento total do ecrã) com novo seletor de tamanho/escala (Compacto, Médio e Ecrã Cheio 100%)!"
+  "releaseNotes": "• Registo e fixação da Velocidade Máxima atingida com marcador no manómetro desportivo.\n• Início automático de viagens ao ligar o motor ou conectar o OBD2, com salvamento automático ao parar/desconectar.\n• Monitorização do Odómetro Total (km da viatura) e Tempo de Motor Ligado.\n• Verificação automática de novas versões ao abrir a aplicação com alerta detalhado do que há de novo.\n• Botão de reposição unificada dos picos de turbo e velocidade."
 }

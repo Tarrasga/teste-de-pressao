@@ -15,21 +15,30 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -40,6 +49,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -71,6 +81,7 @@ import com.testedepressao.app.ui.screens.TripComputerScreen
 import com.testedepressao.app.ui.theme.CarbonBlack
 import com.testedepressao.app.ui.theme.DarkSurface
 import com.testedepressao.app.ui.theme.NeedleRed
+import com.testedepressao.app.ui.theme.NeonCyan
 import com.testedepressao.app.ui.theme.RaceRed
 import com.testedepressao.app.ui.theme.SuccessGreen
 import com.testedepressao.app.ui.theme.TesteDePressaoTheme
@@ -123,6 +134,7 @@ fun MainAppContent(viewModel: MainViewModel) {
     var showPeugeotLabModal by remember { mutableStateOf(false) }
     var showDiagnosticsModal by remember { mutableStateOf(false) }
     var showBatteryModal by remember { mutableStateOf(false) }
+    var dismissedUpdateCode by remember { mutableIntStateOf(0) }
 
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val connectedDeviceName by viewModel.connectedDeviceName.collectAsState()
@@ -396,6 +408,107 @@ fun MainAppContent(viewModel: MainViewModel) {
             onDismiss = { showBluetoothDialog = false }
         )
     }
+
+    if (updateInfo.hasUpdate && updateInfo.latestVersionCode > dismissedUpdateCode) {
+        val notesScrollState = rememberScrollState()
+        AlertDialog(
+            onDismissRequest = { dismissedUpdateCode = updateInfo.latestVersionCode },
+            containerColor = DarkSurface,
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary,
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    tint = NeedleRed
+                )
+            },
+            title = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "Nova Atualização Disponível!",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "v${updateInfo.latestVersionName} (Instalada: v${viewModel.currentVersionName})",
+                        fontSize = 12.sp,
+                        color = NeonCyan,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "O QUE ESTÁ A INOVAR:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeedleRed,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(CarbonBlack)
+                            .padding(10.dp)
+                            .verticalScroll(notesScrollState)
+                    ) {
+                        Text(
+                            text = updateInfo.releaseNotes.ifBlank { "Melhorias de desempenho e novas funcionalidades para Peugeot 508 II." },
+                            fontSize = 13.sp,
+                            color = TextPrimary,
+                            lineHeight = 18.sp
+                        )
+                    }
+
+                    if (isDownloadingUpdate) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LinearProgressIndicator(
+                            progress = { downloadProgress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = NeedleRed,
+                            trackColor = CarbonBlack
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = updateStatusMessage ?: "A descarregar ${(downloadProgress * 100).toInt()}%...",
+                            fontSize = 11.sp,
+                            color = NeonCyan
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.downloadAndInstallUpdate(updateInfo.apkUrl)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NeedleRed,
+                        contentColor = TextPrimary
+                    ),
+                    enabled = !isDownloadingUpdate
+                ) {
+                    Text(if (isDownloadingUpdate) "A Descarregar..." else "Atualizar Agora", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { dismissedUpdateCode = updateInfo.latestVersionCode }
+                ) {
+                    Text("Lembrar Mais Tarde", color = TextSecondary)
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -583,13 +696,18 @@ private fun ScreenSwitcher(
             when (selectedTab) {
                 0 -> LiveTelemetryScreen(
                     telemetry = telemetry,
-                    onResetPeak = { viewModel.resetPeakBoost() },
+                    onResetPeak = {
+                        viewModel.resetPeakBoost()
+                        viewModel.resetPeakSpeed()
+                    },
                     gaugeScale = gaugeScale,
                     onCycleGaugeScale = { viewModel.cycleGaugeScale() }
                 )
                 1 -> TripComputerScreen(
                     liveTrip = liveTrip,
                     history = tripHistory,
+                    odometerKm = telemetry.totalOdometerKm,
+                    engineRuntime = telemetry.engineRunTimeFormatted,
                     onStartTrip = { viewModel.startTrip() },
                     onStopTrip = { viewModel.stopTrip() },
                     onDeleteTrip = { viewModel.deleteTrip(it) }

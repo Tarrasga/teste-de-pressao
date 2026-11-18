@@ -58,7 +58,8 @@ fun SportCompanionGauge(
     rpm: Int,
     speedKmh: Int,
     modifier: Modifier = Modifier,
-    initialMode: CompanionGaugeMode = CompanionGaugeMode.RPM
+    initialMode: CompanionGaugeMode = CompanionGaugeMode.RPM,
+    peakSpeedKmh: Int = 0
 ) {
     var mode by remember { mutableStateOf(initialMode) }
 
@@ -242,6 +243,30 @@ fun SportCompanionGauge(
                     }
                 }
 
+                // 4b. Peak Speed Marker Bug (when in SPEED mode)
+                if (!isRpm && peakSpeedKmh > 0) {
+                    val peakRatio = (peakSpeedKmh.toFloat() / maxVal).coerceIn(0f, 1f)
+                    val peakAngleDeg = startAngle + (peakRatio * sweepTotal)
+                    val peakAngleRad = peakAngleDeg * (PI / 180f).toFloat()
+                    val peakOuterR = dialRadius - (6.dp.toPx() * scale)
+                    val peakInnerR = peakOuterR - (11.dp.toPx() * scale)
+                    val pPeak1 = Offset(
+                        center.x + peakOuterR * cos(peakAngleRad),
+                        center.y + peakOuterR * sin(peakAngleRad)
+                    )
+                    val pPeak2 = Offset(
+                        center.x + peakInnerR * cos(peakAngleRad),
+                        center.y + peakInnerR * sin(peakAngleRad)
+                    )
+                    drawLine(
+                        color = NeedleRed,
+                        start = pPeak1,
+                        end = pPeak2,
+                        strokeWidth = 3.5f.dp.toPx() * scale,
+                        cap = StrokeCap.Round
+                    )
+                }
+
                 // 5. RED NEEDLE (PONTEIRO VERMELHO)
                 val needleLength = dialRadius - (16.dp.toPx() * scale)
                 val tailLength = 22.dp.toPx() * scale
@@ -346,10 +371,18 @@ fun SportCompanionGauge(
                     fontWeight = FontWeight.ExtraBold,
                     fontFamily = FontFamily.Monospace
                 )
+                if (!isRpm && peakSpeedKmh > 0) {
+                    Text(
+                        text = "MÁX: $peakSpeedKmh KM/H",
+                        color = NeedleRed,
+                        fontSize = (9.5f * scale).sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
                 Text(
                     text = unitText,
                     color = if (isHigh) NeedleRed else TextSecondary,
-                    fontSize = (10 * scale).sp,
+                    fontSize = (9 * scale).sp,
                     fontWeight = FontWeight.Bold
                 )
             }

@@ -87,8 +87,8 @@ class TripManager(
         val live = _liveTrip.value
         _liveTrip.value = live.copy(isRecording = false)
 
-        // Only save if the trip lasted more than 10 seconds or covered some distance
-        if (live.durationSeconds < 10 && live.distanceKm < 0.05f) {
+        // Only save if the trip lasted more than 10 seconds or covered some distance or reached speed
+        if (live.durationSeconds < 10 && live.distanceKm < 0.05f && live.maxSpeedKmh < 10) {
             return null
         }
 
@@ -167,7 +167,7 @@ class TripManager(
             (newDistance / (newDuration / 3600.0f))
         } else 0.0f
 
-        val newMaxSpeed = max(current.maxSpeedKmh, speedKmh)
+        val newMaxSpeed = maxOf(current.maxSpeedKmh, speedKmh, telem.peakSpeedKmh)
         val newMaxBoost = max(current.maxBoostBar, telem.boostPressureBar)
         val newMaxRpm = max(current.maxRpm, telem.rpm)
 

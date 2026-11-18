@@ -47,6 +47,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         tripManager.bindTelemetryProvider { obdManager.telemetry.value }
+
+        // Automatically check for updates on startup
+        viewModelScope.launch {
+            updateManager.checkForUpdates()
+        }
+
+        // Auto-manage trip recording based on OBD connection
+        viewModelScope.launch {
+            bluetoothManager.connectionStatus.collect { status ->
+                if (status == com.testedepressao.app.data.models.ConnectionStatus.CONNECTED) {
+                    tripManager.startTrip()
+                } else if (status == com.testedepressao.app.data.models.ConnectionStatus.DISCONNECTED ||
+                    status == com.testedepressao.app.data.models.ConnectionStatus.ERROR
+                ) {
+                    tripManager.stopTrip()
+                }
+            }
+        }
+
+        // Auto-start trip recording in demo mode
+        viewModelScope.launch {
+            obdManager.isDemoMode.collect { demo ->
+                if (demo) {
+                    tripManager.startTrip()
+                }
+            }
+        }
+
+        // Auto-start trip recording when engine is detected running
+        viewModelScope.launch {
+            obdManager.telemetry.collect { telem ->
+                if ((telem.rpm > 400 || telem.speedKmh > 0) && !tripManager.liveTrip.value.isRecording) {
+                    tripManager.startTrip()
+                }
+            }
+        }
     }
 
     fun getBondedDevices(): List<BluetoothDevice> {
@@ -69,6 +105,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetPeakBoost() {
         obdManager.resetPeakBoost()
+    }
+
+    fun resetPeakSpeed() {
+        obdManager.resetPeakSpeed()
     }
 
     fun armAccelerationTest() {
@@ -169,6 +209,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        tripManager.stopTrip()
         bluetoothManager.disconnect()
         obdManager.stopPolling()
     }

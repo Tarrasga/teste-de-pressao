@@ -56,7 +56,9 @@ class SettingsPreferences(context: Context) {
             "oil_temp",
             "voltage",
             "engine_load",
-            "intake_temp"
+            "intake_temp",
+            "runtime",
+            "odometer"
         )
     }
 }

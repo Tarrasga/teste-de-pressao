@@ -153,6 +153,18 @@ private fun LandscapeCockpitView(
                 value = telemetry.batteryVoltage?.let { String.format("%.1fV", it) } ?: "--",
                 color = if ((telemetry.batteryVoltage ?: 14f) < 12.2f) WarningAmber else NeonCyan
             )
+            Spacer(modifier = Modifier.height(6.dp))
+            CompactLiveMetric(
+                label = "VEL. MÁX",
+                value = "${telemetry.peakSpeedKmh} km/h",
+                color = NeedleRed
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            CompactLiveMetric(
+                label = "ODÓMETRO",
+                value = telemetry.totalOdometerKm?.let { "$it km" } ?: (telemetry.engineRunTimeFormatted ?: "--"),
+                color = NeonCyan
+            )
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedButton(
                 onClick = onResetPeak,
@@ -190,7 +202,8 @@ private fun LandscapeCockpitView(
                 rpm = telemetry.rpm,
                 speedKmh = telemetry.speedKmh,
                 modifier = Modifier.fillMaxSize(gaugeScale),
-                initialMode = CompanionGaugeMode.RPM
+                initialMode = CompanionGaugeMode.RPM,
+                peakSpeedKmh = telemetry.peakSpeedKmh
             )
         }
     }
@@ -256,6 +269,7 @@ private fun PortraitCockpitView(
             SportCompanionGauge(
                 rpm = telemetry.rpm,
                 speedKmh = telemetry.speedKmh,
+                peakSpeedKmh = telemetry.peakSpeedKmh,
                 modifier = Modifier.size(portraitGaugeSize)
             )
         }
@@ -268,7 +282,7 @@ private fun PortraitCockpitView(
             shape = RoundedCornerShape(10.dp)
         ) {
             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
-            Text("Repor Pico de Pressão", fontSize = 12.sp)
+            Text("Repor Picos (Turbo / Vel)", fontSize = 12.sp)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -288,8 +302,31 @@ private fun PortraitCockpitView(
             TelemetryCard(
                 title = "Velocidade Real",
                 value = telemetry.speedKmh.toString(),
-                unit = "KM/H",
-                accentColor = TextPrimary,
+                unit = "KM/H (Máx: ${telemetry.peakSpeedKmh})",
+                accentColor = if (telemetry.speedKmh >= 130) NeedleRed else TextPrimary,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Second Row: Odometer and Engine Uptime
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            TelemetryCard(
+                title = "Odómetro Total",
+                value = telemetry.totalOdometerKm?.let { "$it" } ?: "--",
+                unit = "KM",
+                accentColor = NeonCyan,
+                modifier = Modifier.weight(1f)
+            )
+            TelemetryCard(
+                title = "Tempo Ligado",
+                value = telemetry.engineRunTimeFormatted ?: "--",
+                unit = "HH:MM:SS",
+                accentColor = WarningAmber,
                 modifier = Modifier.weight(1f)
             )
         }

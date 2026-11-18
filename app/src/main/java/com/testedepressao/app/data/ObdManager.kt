@@ -62,6 +62,7 @@ class ObdManager(
 
     private var barometricPressureKpa = 101 // ~1.01 Bar atmospheric pressure
     private var secondarySensorIndex = 0
+    private var engineStartTimeMs = 0L
     private var consecutiveTurboFailures = 0
     private val unsupportedPids = mutableSetOf<String>()
     private val pidFailures = mutableMapOf<String, Int>()
@@ -214,6 +215,28 @@ class ObdManager(
                 numericValue = telem.barometricPressureKpa.toFloat(),
                 isEnabled = enabledSet.contains("baro"),
                 description = "Pressão do ar ambiente utilizada como referência barométrica."
+            ),
+            SensorItem(
+                id = "odometer",
+                name = "Quilometragem Total (Odómetro)",
+                pid = "01A6",
+                category = SensorCategory.DINAMICA,
+                unit = "km",
+                value = telem.totalOdometerKm?.let { String.format(Locale.US, "%,d km", it).replace(',', '.') } ?: "--",
+                numericValue = telem.totalOdometerKm?.toFloat() ?: 0f,
+                isEnabled = enabledSet.contains("odometer"),
+                description = "Quilometragem total acumulada no odómetro do veículo."
+            ),
+            SensorItem(
+                id = "max_speed",
+                name = "Velocidade Máxima Registada",
+                pid = "MAX",
+                category = SensorCategory.DINAMICA,
+                unit = "km/h",
+                value = "${telem.peakSpeedKmh} km/h",
+                numericValue = telem.peakSpeedKmh.toFloat(),
+                isEnabled = true,
+                description = "Velocidade máxima de ponta atingida nesta sessão."
             )
         )
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
@@ -248,6 +271,13 @@ class ObdManager(
         // Read barometric pressure once
         val baroResp = bluetoothManager.sendCommand("0133", 600)
         parseBaro(baroResp)
+
+        // Read Odometer (PID 01A6) at connection
+        val odoResp = bluetoothManager.sendCommand("01A6", 600)
+        val odo = parseOdometer(odoResp)
+        if (odo != null && odo > 0) {
+            _telemetry.value = _telemetry.value.copy(totalOdometerKm = odo)
+        }
     }
 
     private suspend fun <T> withDiagnosticLock(block: suspend () -> T): T {
@@ -307,14 +337,14 @@ class ObdManager(
                         }
                     }
 
-                    // PRIORITY 2: Speed (km/h) for 0-100 acceleration
+                    // PRIORITY 2: Speed (km/h) for 0-100 acceleration, peak speed and trip
                     var speedKmh = _telemetry.value.speedKmh
-                    if (enabled.contains("speed") || _accelerationState.value.isArmed || _accelerationState.value.isRunning) {
-                        val speedResp = bluetoothManager.sendCommand("010D", 220)
-                        val parsedSpeed = parseSingleBytePid(speedResp, "010D")
-                        if (parsedSpeed != null) {
-                            speedKmh = parsedSpeed
-                        }
+                    var peakSpeed = _telemetry.value.peakSpeedKmh
+                    val speedResp = bluetoothManager.sendCommand("010D", 220)
+                    val parsedSpeed = parseSingleBytePid(speedResp, "010D")
+                    if (parsedSpeed != null) {
+                        speedKmh = parsedSpeed
+                        peakSpeed = max(peakSpeed, speedKmh)
                     }
 
                     // PRIORITY 3: RPM
@@ -324,6 +354,9 @@ class ObdManager(
                         val parsedRpm = parseRpm(rpmResp)
                         if (parsedRpm != null) {
                             rpm = parsedRpm
+                            if (rpm > 400 && engineStartTimeMs == 0L) {
+                                engineStartTimeMs = System.currentTimeMillis()
+                            }
                         }
                     }
 
@@ -337,10 +370,11 @@ class ObdManager(
                     var maf = _telemetry.value.mafGramsPerSec
                     var fuelLevel = _telemetry.value.fuelLevelPercent
                     var runtimeSec = _telemetry.value.engineRunTimeSec
+                    var totalOdo = _telemetry.value.totalOdometerKm
 
                     val secondaryPool = listOf(
                         "coolant", "oil_temp", "voltage", "engine_load",
-                        "intake_temp", "throttle", "maf", "fuel_level", "runtime"
+                        "intake_temp", "throttle", "maf", "fuel_level", "runtime", "odometer"
                     ).filter { enabled.contains(it) && !unsupportedPids.contains(it) }
 
                     if (secondaryPool.isNotEmpty()) {
@@ -439,7 +473,21 @@ class ObdManager(
                                     recordSecondaryFailure("runtime")
                                 }
                             }
+                            "odometer" -> {
+                                val resp = bluetoothManager.sendCommand("01A6", 240)
+                                val parsed = parseOdometer(resp)
+                                if (parsed != null) {
+                                    totalOdo = parsed
+                                    pidFailures["odometer"] = 0
+                                } else {
+                                    recordSecondaryFailure("odometer")
+                                }
+                            }
                         }
+                    }
+
+                    if (runtimeSec == null && engineStartTimeMs > 0L) {
+                        runtimeSec = ((System.currentTimeMillis() - engineStartTimeMs) / 1000L).toInt()
                     }
 
                     _telemetry.value = _telemetry.value.copy(
@@ -447,6 +495,7 @@ class ObdManager(
                         peakBoostBar = currentPeak,
                         rpm = rpm,
                         speedKmh = speedKmh,
+                        peakSpeedKmh = peakSpeed,
                         coolantTempC = coolantTemp,
                         oilTempC = oilTemp,
                         batteryVoltage = voltage,
@@ -456,6 +505,7 @@ class ObdManager(
                         mafGramsPerSec = maf,
                         fuelLevelPercent = fuelLevel,
                         engineRunTimeSec = runtimeSec,
+                        totalOdometerKm = totalOdo,
                         intakePressureKpa = mapKpa,
                         barometricPressureKpa = barometricPressureKpa
                     )
@@ -525,7 +575,14 @@ class ObdManager(
     }
 
     fun resetPeakBoost() {
-        _telemetry.value = _telemetry.value.copy(peakBoostBar = _telemetry.value.boostPressureBar)
+        _telemetry.value = _telemetry.value.copy(
+            peakBoostBar = _telemetry.value.boostPressureBar,
+            peakSpeedKmh = _telemetry.value.speedKmh
+        )
+    }
+
+    fun resetPeakSpeed() {
+        _telemetry.value = _telemetry.value.copy(peakSpeedKmh = _telemetry.value.speedKmh)
     }
 
     // --- Battery Health Analysis ---
@@ -767,18 +824,21 @@ class ObdManager(
                 }
 
                 val currentPeak = max(_telemetry.value.peakBoostBar, simBoost)
+                val currentPeakSpeed = max(_telemetry.value.peakSpeedKmh, simSpeed)
                 val simOil = 92 + (simSpeed / 20)
                 val simVoltage = 14.2f + kotlin.math.sin(timeStep.toDouble()).toFloat() * 0.2f
                 val simLoad = (25 + (simBoost.coerceAtLeast(0f) * 35)).toInt().coerceIn(10, 99)
                 val simIat = 28 + (simBoost.coerceAtLeast(0f) * 8).toInt()
                 val simThrottle = (simLoad * 0.9f).toInt()
                 val simMaf = (12.0f + (simRpm / 100f) * 2.5f)
+                val simOdometer = 124850 + (simRuntime * 0.02f).toInt()
 
                 _telemetry.value = VehicleTelemetry(
                     boostPressureBar = simBoost,
                     peakBoostBar = currentPeak,
                     rpm = simRpm,
                     speedKmh = simSpeed,
+                    peakSpeedKmh = currentPeakSpeed,
                     coolantTempC = 90,
                     oilTempC = simOil,
                     batteryVoltage = simVoltage,
@@ -788,6 +848,7 @@ class ObdManager(
                     mafGramsPerSec = simMaf,
                     fuelLevelPercent = 68,
                     engineRunTimeSec = simRuntime,
+                    totalOdometerKm = simOdometer,
                     intakePressureKpa = (101 + simBoost * 100).toInt(),
                     barometricPressureKpa = 101
                 )
@@ -872,6 +933,29 @@ class ObdManager(
         if (b != null && b in 60..120) {
             barometricPressureKpa = b
         }
+    }
+
+    private fun parseOdometer(response: String): Int? {
+        val clean = response.replace(" ", "").trim().uppercase(Locale.US)
+        val expected = "41A6"
+        val idx = clean.indexOf(expected)
+        if (idx != -1 && idx + 12 <= clean.length) {
+            val a = clean.substring(idx + 4, idx + 6).toLongOrNull(16) ?: return null
+            val b = clean.substring(idx + 6, idx + 8).toLongOrNull(16) ?: return null
+            val c = clean.substring(idx + 8, idx + 10).toLongOrNull(16) ?: return null
+            val d = clean.substring(idx + 10, idx + 12).toLongOrNull(16) ?: return null
+            val tenths = (a shl 24) or (b shl 16) or (c shl 8) or d
+            val km = (tenths / 10L).toInt()
+            if (km in 1..2_000_000) return km
+        }
+        val idx31 = clean.indexOf("4131")
+        if (idx31 != -1 && idx31 + 8 <= clean.length) {
+            val a = clean.substring(idx31 + 4, idx31 + 6).toIntOrNull(16) ?: return null
+            val b = clean.substring(idx31 + 6, idx31 + 8).toIntOrNull(16) ?: return null
+            val km = (a * 256) + b
+            if (km in 1..2_000_000) return km
+        }
+        return null
     }
 
     private fun formatRuntime(seconds: Int): String {

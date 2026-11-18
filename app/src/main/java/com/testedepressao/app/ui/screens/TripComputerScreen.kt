@@ -59,7 +59,9 @@ fun TripComputerScreen(
     onStartTrip: () -> Unit,
     onStopTrip: () -> Unit,
     onDeleteTrip: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    odometerKm: Int? = null,
+    engineRuntime: String? = null
 ) {
     LazyColumn(
         modifier = modifier
@@ -262,6 +264,32 @@ fun TripComputerScreen(
                     accentColor = TextPrimary,
                     modifier = Modifier.weight(1f)
                 )
+            }
+        }
+
+        // --- 5b. Odómetro Total & Tempo de Motor Ligado ---
+        if (odometerKm != null || engineRuntime != null) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    TelemetryCard(
+                        title = "Odómetro Total",
+                        value = odometerKm?.let { "$it" } ?: "--",
+                        unit = "Quilómetros",
+                        accentColor = NeonCyan,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    TelemetryCard(
+                        title = "Tempo de Motor",
+                        value = engineRuntime ?: "--",
+                        unit = "Ligado",
+                        accentColor = WarningAmber,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
 
